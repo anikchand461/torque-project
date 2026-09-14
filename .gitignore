@@ -1,0 +1,46 @@
+# OS
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage / caches
+coverage/
+.cache/
+
+# Local Claude / AI tool files
+.claude/
