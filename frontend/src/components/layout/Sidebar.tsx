@@ -8,12 +8,16 @@ import {
   History,
   Settings,
   Plus,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 interface SidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
   onNewGraph: () => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 const navigation = [
@@ -43,20 +47,40 @@ export default function Sidebar({
   activeView,
   onViewChange,
   onNewGraph,
+  collapsed,
+  onToggleCollapse,
 }: SidebarProps) {
   function handleNavigation(
     view: string,
   ) {
-    console.log(
-      "SIDEBAR NAVIGATION:",
-      view,
-    );
-
     onViewChange(view);
   }
 
   return (
-    <aside className="sidebar">
+    <aside
+      className={`sidebar ${
+        collapsed ? "sidebar-collapsed" : ""
+      }`}
+    >
+      {/* COLLAPSE TOGGLE */}
+
+      <button
+        type="button"
+        className="sidebar-toggle"
+        onClick={onToggleCollapse}
+        title={
+          collapsed
+            ? "Expand sidebar"
+            : "Collapse sidebar"
+        }
+      >
+        {collapsed ? (
+          <ChevronRight size={13} />
+        ) : (
+          <ChevronLeft size={13} />
+        )}
+      </button>
+
       {/* LOGO */}
 
       <div className="sidebar-logo">
@@ -64,38 +88,39 @@ export default function Sidebar({
           <Network size={18} />
         </div>
 
-        <div>
-          <div className="logo-title">
-            Torque
-          </div>
+        {!collapsed && (
+          <div>
+            <div className="logo-title">
+              Torque
+            </div>
 
-          <div className="logo-subtitle">
-            Communications
+            <div className="logo-subtitle">
+              Communications
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* WORKSPACE */}
 
       <div className="sidebar-section">
-        <div className="sidebar-section-title">
-          WORKSPACE
-        </div>
+        {!collapsed && (
+          <div className="sidebar-section-title">
+            WORKSPACE
+          </div>
+        )}
 
         <button
           type="button"
           className="new-graph-button"
+          title="New Graph"
           onClick={() => {
-            console.log(
-              "NEW GRAPH CLICKED",
-            );
-
             onNewGraph();
           }}
         >
           <Plus size={16} />
 
-          New Graph
+          {!collapsed && "New Graph"}
         </button>
       </div>
 
@@ -112,6 +137,7 @@ export default function Sidebar({
             <button
               key={item.label}
               type="button"
+              title={item.label}
               className={`sidebar-nav-item ${
                 active ? "active" : ""
               }`}
@@ -123,9 +149,11 @@ export default function Sidebar({
             >
               <Icon size={18} />
 
-              <span>
-                {item.label}
-              </span>
+              {!collapsed && (
+                <span>
+                  {item.label}
+                </span>
+              )}
             </button>
           );
         })}
@@ -136,6 +164,7 @@ export default function Sidebar({
       <div className="sidebar-bottom">
         <button
           type="button"
+          title="Settings"
           className={`sidebar-nav-item ${
             activeView === "Settings"
               ? "active"
@@ -149,21 +178,28 @@ export default function Sidebar({
         >
           <Settings size={18} />
 
-          <span>Settings</span>
+          {!collapsed && (
+            <span>Settings</span>
+          )}
         </button>
 
-        <div className="backend-status">
+        <div
+          className="backend-status"
+          title="Backend connected — localhost:8000"
+        >
           <span className="status-dot" />
 
-          <div>
-            <div className="status-title">
-              Backend connected
-            </div>
+          {!collapsed && (
+            <div>
+              <div className="status-title">
+                Backend connected
+              </div>
 
-            <div className="status-url">
-              localhost:8000
+              <div className="status-url">
+                localhost:8000
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </aside>

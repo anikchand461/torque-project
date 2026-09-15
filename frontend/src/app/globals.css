@@ -84,6 +84,8 @@ button:disabled {
   position: relative;
   z-index: 100;
 
+  flex-shrink: 0;
+
   width: 240px;
   min-width: 240px;
   height: 100vh;
@@ -97,7 +99,61 @@ button:disabled {
 
   padding: 20px 14px;
 
+  transition:
+    width 0.18s ease,
+    min-width 0.18s ease,
+    padding 0.18s ease;
+
   pointer-events: auto;
+}
+
+.sidebar-collapsed {
+  width: 60px;
+  min-width: 60px;
+
+  padding: 20px 8px;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  top: 22px;
+  right: -11px;
+
+  z-index: 101;
+
+  width: 22px;
+  height: 22px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+
+  background: #171717;
+  color: #999;
+
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+
+  pointer-events: auto;
+}
+
+.sidebar-toggle:hover {
+  background: #222;
+  color: #eee;
+}
+
+.sidebar-collapsed .sidebar-logo,
+.sidebar-collapsed .new-graph-button,
+.sidebar-collapsed .sidebar-nav-item {
+  justify-content: center;
+}
+
+.sidebar-collapsed .backend-status {
+  justify-content: center;
 }
 
 .sidebar-logo {
@@ -315,14 +371,14 @@ button:disabled {
   flex-shrink: 0;
 
   width: 100%;
-  height: 62px;
-  min-height: 62px;
+  height: 48px;
+  min-height: 48px;
 
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  padding: 0 24px;
+  padding: 0 20px;
 
   border-bottom: 1px solid var(--border);
 
@@ -450,13 +506,13 @@ button:disabled {
 
   flex-shrink: 0;
 
-  min-height: 82px;
+  min-height: 58px;
 
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  padding: 16px 24px;
+  padding: 10px 24px;
 
   border-bottom: 1px solid #1d1d1d;
 
@@ -468,13 +524,13 @@ button:disabled {
 .workspace-header h1 {
   margin: 0;
 
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .workspace-header p {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
 
   color: #666;
 
@@ -1145,10 +1201,12 @@ button:disabled {
 
 .torque-flow-container
   .react-flow__controls {
-  position: relative;
   z-index: 50;
 
   border: 1px solid #292929;
+  border-radius: 6px;
+
+  overflow: hidden;
 
   box-shadow: none;
 
@@ -1157,8 +1215,8 @@ button:disabled {
 
 .torque-flow-container
   .react-flow__controls-button {
-  width: 32px;
-  height: 32px;
+  width: 20px;
+  height: 20px;
 
   border-bottom: 1px solid #292929;
 
@@ -1167,6 +1225,12 @@ button:disabled {
   fill: #777;
 
   pointer-events: auto;
+}
+
+.torque-flow-container
+  .react-flow__controls-button svg {
+  max-width: 9px;
+  max-height: 9px;
 }
 
 .torque-flow-container
@@ -1521,4 +1585,71 @@ button:disabled {
   .workspace-header h1 {
     font-size: 15px;
   }
+}
+
+
+/* =========================================================
+   INFO TOOLTIP
+
+   Trigger ("i" icon) stays inline; the bubble itself is
+   rendered through a portal (see InfoTooltip.tsx) so it can
+   escape modals with `overflow: hidden` and always sit
+   above them. Visibility is controlled by React mounting it
+   (not by CSS opacity/hover), so top/left/width come from
+   the component's inline style and only stacking + look
+   live here.
+========================================================= */
+
+.info-tooltip {
+  position: relative;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-left: 5px;
+
+  vertical-align: middle;
+}
+
+.info-tooltip-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 13px;
+  height: 13px;
+
+  border: 1px solid #4a4a4a;
+  border-radius: 50%;
+
+  color: #888;
+
+  font-size: 9px;
+  font-weight: 700;
+  font-style: italic;
+
+  cursor: help;
+
+  user-select: none;
+}
+
+.info-tooltip-bubble {
+  z-index: 10000;
+
+  padding: 8px 10px;
+
+  border: 1px solid #333;
+  border-radius: 6px;
+
+  background: #1c1c1c;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+  color: #ccc;
+
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.5;
+
+  pointer-events: none;
 }

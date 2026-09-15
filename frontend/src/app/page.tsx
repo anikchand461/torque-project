@@ -38,12 +38,15 @@ import {
   deleteNode,
   executeGraph,
   deleteGraph,
+  createRelationship,
   deleteRelationship,
   createProtocol,
   updateProtocol,
   deleteProtocol,
   stopExecution,
 } from "@/lib/api";
+
+import { findDuplicateRelationship } from "@/lib/relationships";
 
 import type {
   Graph,
@@ -63,6 +66,9 @@ export default function Home() {
 
   const [activeView, setActiveView] =
     useState("Graph");
+
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    useState(false);
 
   const [loading, setLoading] =
     useState(true);
@@ -624,6 +630,9 @@ export default function Home() {
       setCreatingNode(true);
       setError(null);
 
+      const parentId =
+        nodeParentId || null;
+
       const newNode =
         await createNode(
           selectedGraph.id,
@@ -633,8 +642,7 @@ export default function Home() {
               nodeTitle.trim() || null,
             role:
               nodeRole.trim() || null,
-            parent_id:
-              nodeParentId || null,
+            parent_id: parentId,
           },
         );
 
@@ -642,6 +650,81 @@ export default function Home() {
         ...current,
         newNode,
       ]);
+
+      /*
+       * A parent selection sets hierarchy
+       * (Node.parent_id) above — hierarchy and
+       * communication remain separate sources
+       * of truth. But the org chart is only
+       * useful once agents can actually talk to
+       * each other, so a normal, ordinary
+       * communication Relationship (BIDIRECTIONAL,
+       * type "Communication") is also created
+       * between parent and child here — through
+       * the exact same createRelationship() call
+       * a manual drag-to-connect uses, so it's
+       * indistinguishable from one afterwards:
+       * same UUID, same edit/delete workflow,
+       * same rendering. Guarded against a
+       * duplicate in case one already exists for
+       * this pair.
+       */
+
+      if (parentId) {
+        const alreadyExists =
+          findDuplicateRelationship(
+            relationships,
+            parentId,
+            newNode.id,
+          );
+
+        if (!alreadyExists) {
+          try {
+            const parentCommunicationRelationship =
+              await createRelationship(
+                selectedGraph.id,
+                {
+                  source_node_id:
+                    parentId,
+
+                  target_node_id:
+                    newNode.id,
+
+                  relationship_type:
+                    "Communication",
+
+                  direction:
+                    "BIDIRECTIONAL",
+
+                  context: null,
+                  reliance: null,
+                  protocol_id: null,
+                },
+              );
+
+            setRelationships(
+              (current) => [
+                ...current,
+                parentCommunicationRelationship,
+              ],
+            );
+          } catch (relationshipErr) {
+            // Node creation already
+            // succeeded — don't fail the
+            // whole operation over the
+            // best-effort communication
+            // link, just surface it.
+            console.error(
+              "AUTO-CREATE PARENT RELATIONSHIP ERROR:",
+              relationshipErr,
+            );
+
+            setError(
+              "Node created, but the automatic communication link to its parent could not be created.",
+            );
+          }
+        }
+      }
 
       setShowAddNodeModal(false);
 
@@ -1572,6 +1655,12 @@ export default function Home() {
         }}
         onNewGraph={
           openNewGraphModal
+        }
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() =>
+          setSidebarCollapsed(
+            (current) => !current,
+          )
         }
       />
 

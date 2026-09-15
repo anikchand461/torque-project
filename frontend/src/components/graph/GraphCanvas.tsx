@@ -13,6 +13,7 @@ import {
   Background,
   ConnectionMode,
   Controls,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
@@ -21,6 +22,7 @@ import {
   type Connection,
   type Edge,
   type Node as FlowNode,
+  type OnConnectStartParams,
   type OnNodesChange,
 } from "@xyflow/react";
 
@@ -37,6 +39,15 @@ import {
   createRelationship,
   updateRelationship,
 } from "@/lib/api";
+
+import {
+  findDuplicateRelationship,
+  getBidirectionalDetail,
+  getDirectionSummary,
+  getEffectiveEndpoints,
+} from "@/lib/relationships";
+
+import InfoTooltip from "@/components/common/InfoTooltip";
 
 import GraphNode from "./GraphNode";
 import GraphEdge from "./GraphEdge";
@@ -268,6 +279,161 @@ function createPositions(
 }
 
 /* =========================================================
+   HANDLE ROUTING
+
+   GraphNode renders a source-typed AND a target-typed
+   handle stacked on all four sides (top/right/bottom/left),
+   so — unlike an earlier version of this file that only had
+   two source-typed and two target-typed handles on fixed,
+   different sides — there is no longer any relative
+   position between two nodes that can't be served by a
+   correctly-typed handle on the correct side.
+
+   The choice is a simple dominant-axis rule: whichever axis
+   (horizontal/vertical) has the larger distance between the
+   two node centers decides whether the edge exits/enters
+   through the left/right sides or the top/bottom sides, and
+   the sign of that distance decides which of the two. This
+   always produces a short, direct, naturally-facing
+   connection for horizontal, vertical, and diagonal
+   arrangements alike, without any per-node-type lookup that
+   could ever resolve to a handle of the wrong type — the
+   source side always maps to `${side}-source` and the
+   target side always maps to `${side}-target`, both of
+   which always exist on every node.
+
+   This never touches which node is logically the source vs
+   target (that's `relationship.source_node_id`/
+   `target_node_id`, untouched here) — only which side of
+   each node the line is drawn from/to.
+========================================================= */
+
+const APPROX_NODE_WIDTH = 280;
+const APPROX_NODE_HEIGHT = 92;
+
+type CompassSide =
+  | "top"
+  | "right"
+  | "bottom"
+  | "left";
+
+function pickCompassSides(
+  sourceCenter: {
+    x: number;
+    y: number;
+  },
+  targetCenter: {
+    x: number;
+    y: number;
+  },
+): {
+  sourceSide: CompassSide;
+  targetSide: CompassSide;
+} {
+  const dx =
+    targetCenter.x - sourceCenter.x;
+
+  const dy =
+    targetCenter.y - sourceCenter.y;
+
+  /*
+   * Node cards are much wider than they are
+   * tall (~280 x ~92), so comparing raw pixel
+   * dx/dy is misleading: two nodes that are
+   * mostly stacked vertically can still end up
+   * with a larger raw horizontal gap than
+   * vertical gap simply because the cards are
+   * wide, which used to route the edge out the
+   * side instead of the bottom/top. Normalizing
+   * each axis by the node's own extent on that
+   * axis first answers the actual question —
+   * "is the target more node-widths away
+   * horizontally, or more node-heights away
+   * vertically?" — which matches how the
+   * relationship actually looks on screen.
+   */
+
+  const horizontalRatio =
+    Math.abs(dx) / APPROX_NODE_WIDTH;
+
+  const verticalRatio =
+    Math.abs(dy) / APPROX_NODE_HEIGHT;
+
+  // Horizontal distance dominates: exit/enter
+  // through the left/right sides.
+  if (
+    horizontalRatio >= verticalRatio
+  ) {
+    return dx >= 0
+      ? {
+          sourceSide: "right",
+          targetSide: "left",
+        }
+      : {
+          sourceSide: "left",
+          targetSide: "right",
+        };
+  }
+
+  // Vertical distance dominates: exit/enter
+  // through the top/bottom sides.
+  return dy >= 0
+    ? {
+        sourceSide: "bottom",
+        targetSide: "top",
+      }
+    : {
+        sourceSide: "top",
+        targetSide: "bottom",
+      };
+}
+
+function pickHandlePair(
+  sourceTopLeft: {
+    x: number;
+    y: number;
+  },
+  targetTopLeft: {
+    x: number;
+    y: number;
+  },
+): {
+  sourceHandle: string;
+  targetHandle: string;
+} {
+  const sourceCenter = {
+    x:
+      sourceTopLeft.x +
+      APPROX_NODE_WIDTH / 2,
+    y:
+      sourceTopLeft.y +
+      APPROX_NODE_HEIGHT / 2,
+  };
+
+  const targetCenter = {
+    x:
+      targetTopLeft.x +
+      APPROX_NODE_WIDTH / 2,
+    y:
+      targetTopLeft.y +
+      APPROX_NODE_HEIGHT / 2,
+  };
+
+  const {
+    sourceSide,
+    targetSide,
+  } = pickCompassSides(
+    sourceCenter,
+    targetCenter,
+  );
+
+  return {
+    sourceHandle: `${sourceSide}-source`,
+    targetHandle: `${targetSide}-target`,
+  };
+}
+
+/* =========================================================
    POSITION PERSISTENCE
 
    React state alone only survives for as long as the
@@ -361,15 +527,28 @@ function GraphCanvasInner({
   const [flowNodes, setFlowNodes] =
     useState<FlowNode[]>([]);
 
-  const [flowEdges, setFlowEdges] =
-    useState<Edge[]>([]);
-
   /* =======================================================
      NEW CONNECTION
+
+     `fromNodeId`/`toNodeId` (not `connection.source`/
+     `.target`) are the single source of truth for which
+     node is which once a drag lands — see handleConnect,
+     which resolves these against the true drag-start node
+     rather than trusting React Flow's post-normalization
+     Connection object.
   ======================================================= */
 
   const [connection, setConnection] =
     useState<Connection | null>(null);
+
+  const [fromNodeId, setFromNodeId] =
+    useState<string | null>(null);
+
+  const [toNodeId, setToNodeId] =
+    useState<string | null>(null);
+
+  const [bidirectional, setBidirectional] =
+    useState(true);
 
   /* =======================================================
      SELECTED RELATIONSHIP
@@ -419,29 +598,6 @@ function GraphCanvasInner({
 
   const [error, setError] =
     useState<string | null>(null);
-
-  /* =======================================================
-     HANDLE MEMORY
-     
-     Backend currently stores node IDs but not
-     React Flow sourceHandle / targetHandle.
-
-     Therefore we keep the exact visual handle
-     in frontend state while this canvas is mounted.
-  ======================================================= */
-
-  const [
-    relationshipHandles,
-    setRelationshipHandles,
-  ] = useState<
-    Record<
-      string,
-      {
-        sourceHandle?: string | null;
-        targetHandle?: string | null;
-      }
-    >
-  >({});
 
   /* =======================================================
      CONVERT BACKEND NODES → REACT FLOW NODES
@@ -556,6 +712,40 @@ function GraphCanvasInner({
 
   const hasFitViewRef = useRef(false);
 
+  /* =======================================================
+     TRUE DRAG-START NODE
+
+     In loose connectionMode, React Flow's onConnect gives
+     back a Connection whose source/target are normalized by
+     HANDLE TYPE, not by which node the user actually started
+     dragging from — starting a drag on a target-typed handle
+     and dropping on a source-typed one can silently swap
+     which node ends up called "source". onConnectStart fires
+     with the real starting node before any of that
+     normalization happens, so capturing it here is what lets
+     handleConnect below recover the user's true intent.
+  ======================================================= */
+
+  const connectStartRef =
+    useRef<string | null>(null);
+
+  const handleConnectStart =
+    useCallback(
+      (
+        _event: unknown,
+        params: OnConnectStartParams,
+      ) => {
+        connectStartRef.current =
+          params.nodeId ?? null;
+      },
+      [],
+    );
+
+  const handleConnectEnd =
+    useCallback(() => {
+      connectStartRef.current = null;
+    }, []);
+
   useEffect(() => {
     // Re-arm once per graph, so switching to a different
     // graph (which doesn't remount this component) still
@@ -590,65 +780,190 @@ function GraphCanvasInner({
   ]);
 
   /* =======================================================
-     CONVERT BACKEND RELATIONSHIPS → REACT FLOW EDGES
+     DERIVE EDGES FROM CURRENT NODE POSITIONS
+
+     Both edge families are pure functions of data we
+     already have — there is nothing here that needs to be
+     remembered between renders, so both are plain
+     useMemo values, not state-synced-via-effect. This is
+     what makes a newly created relationship render
+     immediately (no effect-timing gap to fall through) and
+     what makes every edge survive a reload with its handles
+     still correctly anchored (nothing was ever persisted
+     that could go stale).
   ======================================================= */
 
-  useEffect(() => {
-    const convertedEdges: Edge[] =
-      relationships.map(
-        (relationship) => {
-          const handles =
-            relationshipHandles[
-              relationship.id
-            ];
+  const nodePositions = useMemo(() => {
+    const map = new Map<
+      string,
+      { x: number; y: number }
+    >();
 
-          return {
-            id: relationship.id,
+    for (const node of flowNodes) {
+      map.set(node.id, node.position);
+    }
 
-            source:
-              relationship.source_node_id,
+    return map;
+  }, [flowNodes]);
 
-            target:
-              relationship.target_node_id,
+  /*
+   * Hierarchy edges are derived directly from
+   * Node.parent_id — never backed by a Relationship
+   * record. They are a separate, purely visual overlay
+   * showing reporting structure.
+   */
+  const hierarchyEdges = useMemo<
+    Edge[]
+  >(() => {
+    const edges: Edge[] = [];
 
-            /*
-             * Preserve the exact handles used
-             * when the relationship was created.
-             */
+    for (const node of torqueNodes) {
+      if (!node.parent_id) {
+        continue;
+      }
 
-            sourceHandle:
-              handles?.sourceHandle ??
-              "bottom-source",
+      const parentPos =
+        nodePositions.get(
+          node.parent_id,
+        );
 
-            targetHandle:
-              handles?.targetHandle ??
-              "top-target",
+      const childPos =
+        nodePositions.get(node.id);
 
-            type: "torqueEdge",
+      if (!parentPos || !childPos) {
+        continue;
+      }
 
-            data: {
-              relationshipType:
-                relationship.relationship_type,
-
-              direction:
-                relationship.direction,
-            },
-
-            animated: false,
-
-            selectable: true,
-          };
-        },
+      const {
+        sourceHandle,
+        targetHandle,
+      } = pickHandlePair(
+        parentPos,
+        childPos,
       );
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs external relationships into locally-mutable edge state (handleDeleteRelationship removes an edge optimistically before the backend confirms).
-    setFlowEdges(
-      convertedEdges,
+      edges.push({
+        id: `hierarchy:${node.id}`,
+
+        source: node.parent_id,
+        target: node.id,
+
+        sourceHandle,
+        targetHandle,
+
+        type: "hierarchyEdge",
+
+        data: {
+          kind: "hierarchy",
+        },
+
+        selectable: true,
+        zIndex: 0,
+      });
+    }
+
+    return edges;
+  }, [torqueNodes, nodePositions]);
+
+  const communicationEdges = useMemo<
+    Edge[]
+  >(() => {
+    return relationships.map(
+      (relationship) => {
+        const sourcePos =
+          nodePositions.get(
+            relationship.source_node_id,
+          );
+
+        const targetPos =
+          nodePositions.get(
+            relationship.target_node_id,
+          );
+
+        const {
+          sourceHandle,
+          targetHandle,
+        } =
+          sourcePos && targetPos
+            ? pickHandlePair(
+                sourcePos,
+                targetPos,
+              )
+            : {
+                sourceHandle:
+                  "bottom-source",
+                targetHandle:
+                  "top-target",
+              };
+
+        const isReverse =
+          relationship.direction ===
+          "REVERSE";
+
+        const isBidirectional =
+          relationship.direction ===
+          "BIDIRECTIONAL";
+
+        const arrow = {
+          type: MarkerType.ArrowClosed,
+          width: 12,
+          height: 12,
+          color: "#999",
+        };
+
+        return {
+          id: relationship.id,
+
+          source:
+            relationship.source_node_id,
+
+          target:
+            relationship.target_node_id,
+
+          sourceHandle,
+          targetHandle,
+
+          type: "torqueEdge",
+
+          data: {
+            kind: "communication",
+
+            relationshipType:
+              relationship.relationship_type,
+
+            direction:
+              relationship.direction,
+          },
+
+          // FORWARD: arrow at target only.
+          // REVERSE: arrow at source only
+          //   (communication actually flows
+          //   target -> source).
+          // BIDIRECTIONAL: arrow at both ends.
+          markerEnd: !isReverse
+            ? arrow
+            : undefined,
+
+          markerStart:
+            isReverse || isBidirectional
+              ? arrow
+              : undefined,
+
+          animated: false,
+          selectable: true,
+          zIndex: 1,
+        };
+      },
     );
-  }, [
-    relationships,
-    relationshipHandles,
-  ]);
+  }, [relationships, nodePositions]);
+
+  const edges = useMemo(
+    () => [
+      ...hierarchyEdges,
+      ...communicationEdges,
+    ],
+    [hierarchyEdges, communicationEdges],
+  );
 
   /* =======================================================
      NODE / EDGE TYPES
@@ -664,6 +979,7 @@ function GraphCanvasInner({
   const edgeTypes = useMemo(
     () => ({
       torqueEdge: GraphEdge,
+      hierarchyEdge: GraphEdge,
     }),
     [],
   );
@@ -733,11 +1049,6 @@ function GraphCanvasInner({
   const handleConnect =
     useCallback(
       (params: Connection) => {
-        console.log(
-          "REACT FLOW CONNECTION:",
-          params,
-        );
-
         if (!params.source) {
           return;
         }
@@ -777,43 +1088,111 @@ function GraphCanvasInner({
           return;
         }
 
+        /*
+         * Resolve the TRUE "from" node using
+         * the node the drag actually started
+         * on (see connectStartRef above), not
+         * React Flow's post-normalization
+         * source/target — this is what makes
+         * P1 -> P2 never silently become
+         * P2 -> P1.
+         */
+
+        const startNodeId =
+          connectStartRef.current;
+
+        let fromId = params.source;
+        let toId = params.target;
+
+        if (
+          startNodeId &&
+          startNodeId === params.target
+        ) {
+          fromId = params.target;
+          toId = params.source;
+        }
+
+        /*
+         * Only one communication relationship
+         * is allowed between any two nodes —
+         * A -> B and B -> A count as the same
+         * pair.
+         */
+
+        const duplicate =
+          findDuplicateRelationship(
+            relationships,
+            fromId,
+            toId,
+          );
+
+        if (duplicate) {
+          const fromName =
+            torqueNodes.find(
+              (node) =>
+                node.id === fromId,
+            )?.name ?? "This node";
+
+          const toName =
+            torqueNodes.find(
+              (node) =>
+                node.id === toId,
+            )?.name ?? "the other node";
+
+          setError(
+            `${fromName} and ${toName} already have a communication relationship. Edit the existing one instead of creating a second.`,
+          );
+
+          return;
+        }
+
         setError(null);
 
         setConnection(
           params,
         );
 
+        setFromNodeId(fromId);
+        setToNodeId(toId);
+
         setRelationshipType(
           "Communication",
         );
 
-        setDirection(
-          "BIDIRECTIONAL",
-        );
+        setBidirectional(true);
 
         setContext("");
 
         setReliance("");
       },
-      [],
+      [relationships, torqueNodes],
     );
 
   /* =======================================================
      CREATE RELATIONSHIP
   ======================================================= */
 
+  const closeConnectionModal =
+    useCallback(() => {
+      if (creating) {
+        return;
+      }
+
+      setConnection(null);
+      setFromNodeId(null);
+      setToNodeId(null);
+    }, [creating]);
+
+  const swapConnectionEndpoints =
+    useCallback(() => {
+      setFromNodeId(toNodeId);
+      setToNodeId(fromNodeId);
+    }, [fromNodeId, toNodeId]);
+
   const handleCreateRelationship =
     useCallback(
       async () => {
-        if (!connection) {
-          return;
-        }
-
-        if (!connection.source) {
-          return;
-        }
-
-        if (!connection.target) {
+        if (!fromNodeId || !toNodeId) {
           return;
         }
 
@@ -831,37 +1210,23 @@ function GraphCanvasInner({
           setCreating(true);
           setError(null);
 
-          console.log(
-            "CREATING RELATIONSHIP:",
-            {
-              source:
-                connection.source,
-
-              target:
-                connection.target,
-
-              sourceHandle:
-                connection.sourceHandle,
-
-              targetHandle:
-                connection.targetHandle,
-            },
-          );
-
           const created =
             await createRelationship(
               graphId,
               {
                 source_node_id:
-                  connection.source,
+                  fromNodeId,
 
                 target_node_id:
-                  connection.target,
+                  toNodeId,
 
                 relationship_type:
                   relationshipType.trim(),
 
-                direction,
+                direction:
+                  bidirectional
+                    ? "BIDIRECTIONAL"
+                    : "FORWARD",
 
                 context:
                   toRelationshipNote(context),
@@ -875,28 +1240,12 @@ function GraphCanvasInner({
             );
 
           /*
-           * Remember the exact handles.
-           */
-
-          setRelationshipHandles(
-            (current) => ({
-              ...current,
-
-              [created.id]: {
-                sourceHandle:
-                  connection.sourceHandle,
-
-                targetHandle:
-                  connection.targetHandle,
-              },
-            }),
-          );
-
-          /*
            * Close connection modal.
            */
 
           setConnection(null);
+          setFromNodeId(null);
+          setToNodeId(null);
 
           /*
            * Tell parent to refresh relationships.
@@ -924,10 +1273,11 @@ function GraphCanvasInner({
         }
       },
       [
-        connection,
+        fromNodeId,
+        toNodeId,
         graphId,
         relationshipType,
-        direction,
+        bidirectional,
         context,
         reliance,
         onRelationshipCreated,
@@ -944,10 +1294,36 @@ function GraphCanvasInner({
         _event: MouseEvent,
         edge: Edge,
       ) => {
-        console.log(
-          "EDGE CLICKED:",
-          edge.id,
-        );
+        /*
+         * Hierarchy edges are a derived visual
+         * overlay of Node.parent_id — there is
+         * no Relationship behind them, so they
+         * must never open the communication
+         * relationship editor. Selecting the
+         * child node instead lets the user jump
+         * straight to changing its parent.
+         */
+
+        if (
+          (
+            edge.data as
+              | { kind?: string }
+              | undefined
+          )?.kind === "hierarchy"
+        ) {
+          const child =
+            torqueNodes.find(
+              (node) =>
+                node.id ===
+                edge.target,
+            );
+
+          onNodeSelect?.(
+            child ?? null,
+          );
+
+          return;
+        }
 
         const relationship =
           relationships.find(
@@ -1001,7 +1377,11 @@ function GraphCanvasInner({
           ),
         );
       },
-      [relationships],
+      [
+        relationships,
+        torqueNodes,
+        onNodeSelect,
+      ],
     );
 
   /* =======================================================
@@ -1059,43 +1439,6 @@ function GraphCanvasInner({
         false,
       );
 
-      /*
-       * Drop the cached handle info for
-       * this relationship. This does NOT
-       * touch flowEdges — the edges-sync
-       * effect below derives flowEdges
-       * purely from the `relationships`
-       * prop, so the edge disappears as
-       * soon as the parent removes this
-       * relationship from that prop. A
-       * local optimistic edit here would
-       * race that prop update and could
-       * reintroduce the "deleted" edge
-       * once this state change re-fires
-       * the sync effect against the still
-       * -stale prop.
-       */
-
-      setRelationshipHandles(
-        (current) => {
-          if (
-            !(relationshipId in current)
-          ) {
-            return current;
-          }
-
-          const next = {
-            ...current,
-          };
-
-          delete next[
-            relationshipId
-          ];
-
-          return next;
-        },
-      );
-
       setError(null);
 
       /*
@@ -1103,7 +1446,12 @@ function GraphCanvasInner({
        * relationships state — it performs
        * the actual delete (optimistic
        * removal + API call + rollback on
-       * failure).
+       * failure). Edges are derived purely
+       * from that `relationships` prop (see
+       * communicationEdges above), so the
+       * edge disappears the instant the
+       * parent removes it from that prop —
+       * nothing local to clean up here.
        */
 
       onDeleteRelationship?.(
@@ -1170,29 +1518,6 @@ function GraphCanvasInner({
           );
 
         /*
-         * Keep the currently selected
-         * handle information.
-         */
-
-        const existingHandles =
-          relationshipHandles[
-            selectedRelationship.id
-          ];
-
-        if (
-          existingHandles
-        ) {
-          setRelationshipHandles(
-            (current) => ({
-              ...current,
-
-              [selectedRelationship.id]:
-                existingHandles,
-            }),
-          );
-        }
-
-        /*
          * Close editor.
          */
 
@@ -1239,7 +1564,6 @@ function GraphCanvasInner({
       direction,
       context,
       reliance,
-      relationshipHandles,
       onRelationshipUpdated,
     ]);
 
@@ -1290,48 +1614,71 @@ function GraphCanvasInner({
     }, [onNodeSelect]);
 
   /* =======================================================
-     CONNECTION SOURCE/TARGET NODES
+     CONNECTION FROM/TO NODES
   ======================================================= */
 
-  const sourceNode =
-    connection
+  const fromNode =
+    fromNodeId
       ? torqueNodes.find(
           (node) =>
-            node.id ===
-            connection.source,
+            node.id === fromNodeId,
         )
       : null;
 
-  const targetNode =
-    connection
+  const toNode =
+    toNodeId
       ? torqueNodes.find(
           (node) =>
-            node.id ===
-            connection.target,
+            node.id === toNodeId,
         )
       : null;
 
   /* =======================================================
-     SELECTED RELATIONSHIP NODES
+     SELECTED RELATIONSHIP FROM/TO NODES
+
+     Uses the effective endpoints (accounting for a stored
+     REVERSE direction) so a person always sees "who talks
+     to whom" the same way regardless of how it happens to
+     be stored.
   ======================================================= */
 
-  const selectedSourceNode =
+  const selectedEffectiveEndpoints =
     selectedRelationship
-      ? torqueNodes.find(
-          (node) =>
-            node.id ===
-            selectedRelationship.source_node_id,
+      ? getEffectiveEndpoints(
+          selectedRelationship.source_node_id,
+          selectedRelationship.target_node_id,
+          direction,
         )
       : null;
 
-  const selectedTargetNode =
-    selectedRelationship
+  const selectedFromNode =
+    selectedEffectiveEndpoints
       ? torqueNodes.find(
           (node) =>
             node.id ===
-            selectedRelationship.target_node_id,
+            selectedEffectiveEndpoints.fromId,
         )
       : null;
+
+  const selectedToNode =
+    selectedEffectiveEndpoints
+      ? torqueNodes.find(
+          (node) =>
+            node.id ===
+            selectedEffectiveEndpoints.toId,
+        )
+      : null;
+
+  const swapSelectedDirection =
+    useCallback(() => {
+      setDirection((current) =>
+        current === "REVERSE"
+          ? "FORWARD"
+          : current === "FORWARD"
+            ? "REVERSE"
+            : current,
+      );
+    }, []);
 
   /* =======================================================
      RENDER
@@ -1346,14 +1693,20 @@ function GraphCanvasInner({
       <div className="torque-flow-container">
         <ReactFlow
           nodes={flowNodes}
-          edges={flowEdges}
+          edges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodesChange={
             onNodesChange
           }
+          onConnectStart={
+            handleConnectStart
+          }
           onConnect={
             handleConnect
+          }
+          onConnectEnd={
+            handleConnectEnd
           }
           onNodeClick={
             handleNodeClick
@@ -1384,6 +1737,7 @@ function GraphCanvasInner({
 
           <Controls
             showInteractive={false}
+            position="bottom-right"
           />
         </ReactFlow>
       </div>
@@ -1400,11 +1754,7 @@ function GraphCanvasInner({
               event.target ===
               event.currentTarget
             ) {
-              if (!creating) {
-                setConnection(
-                  null,
-                );
-              }
+              closeConnectionModal();
             }
           }}
         >
@@ -1430,10 +1780,8 @@ function GraphCanvasInner({
               <button
                 type="button"
                 className="flex h-7 w-7 items-center justify-center rounded-md text-[20px] text-[#777] hover:bg-[#1d1d1d] hover:text-[#eee]"
-                onClick={() =>
-                  setConnection(
-                    null,
-                  )
+                onClick={
+                  closeConnectionModal
                 }
                 disabled={creating}
               >
@@ -1444,41 +1792,100 @@ function GraphCanvasInner({
             {/* BODY */}
 
             <div className="flex flex-col gap-5 p-5">
-              {/* SOURCE → TARGET */}
+              {/* FROM → TO */}
 
-              <div className="flex items-center gap-3 rounded-lg border border-[#292929] bg-[#171717] p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
-                    SOURCE
+              <div>
+                <div className="mb-2 flex items-center text-[10px] text-[#888]">
+                  Communication
+
+                  <InfoTooltip
+                    text="Who is sending information to whom. This is separate from reporting-line hierarchy — two people can communicate without one being the other's manager."
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 rounded-lg border border-[#292929] bg-[#171717] p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
+                      FROM
+                    </div>
+
+                    <div className="truncate text-[12px] font-semibold text-[#eee]">
+                      {fromNode?.name ??
+                        "Unknown"}
+                    </div>
                   </div>
 
-                  <div className="truncate text-[12px] font-semibold text-[#eee]">
-                    {sourceNode?.name ??
-                      "Unknown"}
+                  <button
+                    type="button"
+                    title="Swap direction"
+                    onClick={
+                      swapConnectionEndpoints
+                    }
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#2c2c2c] text-[14px] text-[#999] hover:bg-[#1f1f1f] hover:text-[#eee]"
+                  >
+                    ⇄
+                  </button>
+
+                  <div className="min-w-0 flex-1 text-right">
+                    <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
+                      TO
+                    </div>
+
+                    <div className="truncate text-[12px] font-semibold text-[#eee]">
+                      {toNode?.name ??
+                        "Unknown"}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-[18px] text-[#777]">
-                  →
-                </div>
+                <label className="mt-3 flex items-center gap-2 text-[10px] text-[#aaa]">
+                  <input
+                    type="checkbox"
+                    checked={
+                      bidirectional
+                    }
+                    onChange={(event) =>
+                      setBidirectional(
+                        event.target
+                          .checked,
+                      )
+                    }
+                  />
 
-                <div className="min-w-0 flex-1 text-right">
-                  <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
-                    TARGET
-                  </div>
+                  Two-way communication
 
-                  <div className="truncate text-[12px] font-semibold text-[#eee]">
-                    {targetNode?.name ??
-                      "Unknown"}
-                  </div>
+                  <InfoTooltip
+                    text="On: both sides regularly initiate communication. Off: only the 'From' side initiates — the 'To' side responds but doesn't start new communication on this channel."
+                  />
+                </label>
+
+                <div className="mt-2 text-[10px] text-[#777]">
+                  {bidirectional
+                    ? getBidirectionalDetail(
+                        fromNode?.name ??
+                          "This node",
+                        toNode?.name ??
+                          "the other node",
+                      )
+                    : getDirectionSummary(
+                        fromNode?.name ??
+                          "This node",
+                        toNode?.name ??
+                          "the other node",
+                        "FORWARD",
+                      )}
                 </div>
               </div>
 
               {/* TYPE */}
 
               <label className="flex flex-col gap-2">
-                <span className="text-[10px] text-[#888]">
+                <span className="flex items-center text-[10px] text-[#888]">
                   Relationship Type
+
+                  <InfoTooltip
+                    text="A short label for what this channel is for, e.g. Escalation, Status Update, or Approval Request. Free text — use whatever vocabulary your organization already uses."
+                  />
                 </span>
 
                 <input
@@ -1496,42 +1903,16 @@ function GraphCanvasInner({
                 />
               </label>
 
-              {/* DIRECTION */}
-
-              <label className="flex flex-col gap-2">
-                <span className="text-[10px] text-[#888]">
-                  Direction
-                </span>
-
-                <select
-                  value={direction}
-                  onChange={(event) =>
-                    setDirection(
-                      event.target
-                        .value as RelationshipDirection,
-                    )
-                  }
-                  className="h-10 w-full rounded-md border border-[#2c2c2c] bg-[#181818] px-3 text-[11px] text-[#eee] outline-none focus:border-[#555]"
-                >
-                  <option value="FORWARD">
-                    Forward
-                  </option>
-
-                  <option value="REVERSE">
-                    Reverse
-                  </option>
-
-                  <option value="BIDIRECTIONAL">
-                    Bidirectional
-                  </option>
-                </select>
-              </label>
-
               {/* CONTEXT */}
 
+
               <label className="flex flex-col gap-2">
-                <span className="text-[10px] text-[#888]">
+                <span className="flex items-center text-[10px] text-[#888]">
                   Context
+
+                  <InfoTooltip
+                    text="What information actually gets exchanged here, e.g. 'weekly status', 'budget approvals'. Helps an agent know what this channel is for."
+                  />
                 </span>
 
                 <textarea
@@ -1550,8 +1931,12 @@ function GraphCanvasInner({
               {/* RELIANCE */}
 
               <label className="flex flex-col gap-2">
-                <span className="text-[10px] text-[#888]">
+                <span className="flex items-center text-[10px] text-[#888]">
                   Reliance
+
+                  <InfoTooltip
+                    text="How much one side depends on the other through this channel, e.g. 'CFO relies on Sales Lead for revenue numbers before board meetings'. Useful context for how critical the channel is."
+                  />
                 </span>
 
                 <textarea
@@ -1567,6 +1952,22 @@ function GraphCanvasInner({
                 />
               </label>
 
+              {/* PROTOCOL */}
+
+              <div className="rounded-md border border-[#2c2c2c] bg-[#161616] px-3 py-2.5">
+                <div className="flex items-center text-[10px] text-[#888]">
+                  Protocol
+
+                  <InfoTooltip
+                    text="The rules that govern this channel — who's allowed to send/receive, escalate, bypass the hierarchy, or forward information, and how confidential it is. Manage and attach protocols from the Protocols tab."
+                  />
+                </div>
+
+                <div className="mt-1 text-[9px] text-[#666]">
+                  No protocol attached yet. Multi-protocol attachment is coming in a later update — for now, protocols are managed from the Protocols tab.
+                </div>
+              </div>
+
               {error && (
                 <div className="rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-[10px] text-red-400">
                   {error}
@@ -1580,10 +1981,8 @@ function GraphCanvasInner({
               <button
                 type="button"
                 className="h-9 rounded-md border border-[#303030] px-4 text-[10px] text-[#999] hover:bg-[#1b1b1b] hover:text-[#eee]"
-                onClick={() =>
-                  setConnection(
-                    null,
-                  )
+                onClick={
+                  closeConnectionModal
                 }
                 disabled={creating}
               >
@@ -1598,7 +1997,9 @@ function GraphCanvasInner({
                 }
                 disabled={
                   creating ||
-                  !relationshipType.trim()
+                  !relationshipType.trim() ||
+                  !fromNodeId ||
+                  !toNodeId
                 }
               >
                 {creating
@@ -1678,33 +2079,107 @@ function GraphCanvasInner({
             {/* BODY */}
 
             <div className="flex flex-col gap-5 p-5">
-              {/* SOURCE / TARGET */}
+              {/* FROM / TO */}
 
-              <div className="flex items-center gap-3 rounded-lg border border-[#292929] bg-[#171717] p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
-                    SOURCE
+              <div>
+                <div className="mb-2 flex items-center text-[10px] text-[#888]">
+                  Communication
+
+                  <InfoTooltip
+                    text="Who is sending information to whom. This is separate from reporting-line hierarchy — two people can communicate without one being the other's manager."
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 rounded-lg border border-[#292929] bg-[#171717] p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
+                      FROM
+                    </div>
+
+                    <div className="truncate text-[12px] font-semibold text-[#eee]">
+                      {selectedFromNode?.name ??
+                        "Unknown"}
+                    </div>
                   </div>
 
-                  <div className="truncate text-[12px] font-semibold text-[#eee]">
-                    {selectedSourceNode?.name ??
-                      "Unknown"}
+                  {editingRelationship ? (
+                    <button
+                      type="button"
+                      title="Swap direction"
+                      onClick={
+                        swapSelectedDirection
+                      }
+                      disabled={
+                        direction ===
+                        "BIDIRECTIONAL"
+                      }
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#2c2c2c] text-[14px] text-[#999] hover:bg-[#1f1f1f] hover:text-[#eee] disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      ⇄
+                    </button>
+                  ) : (
+                    <div className="text-[18px] text-[#777]">
+                      {direction ===
+                      "BIDIRECTIONAL"
+                        ? "⇄"
+                        : "→"}
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1 text-right">
+                    <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
+                      TO
+                    </div>
+
+                    <div className="truncate text-[12px] font-semibold text-[#eee]">
+                      {selectedToNode?.name ??
+                        "Unknown"}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-[18px] text-[#777]">
-                  →
-                </div>
+                {editingRelationship && (
+                  <label className="mt-3 flex items-center gap-2 text-[10px] text-[#aaa]">
+                    <input
+                      type="checkbox"
+                      checked={
+                        direction ===
+                        "BIDIRECTIONAL"
+                      }
+                      onChange={(event) =>
+                        setDirection(
+                          event.target
+                            .checked
+                            ? "BIDIRECTIONAL"
+                            : "FORWARD",
+                        )
+                      }
+                    />
 
-                <div className="min-w-0 flex-1 text-right">
-                  <div className="mb-1 text-[8px] font-bold tracking-[0.12em] text-[#666]">
-                    TARGET
-                  </div>
+                    Two-way communication
 
-                  <div className="truncate text-[12px] font-semibold text-[#eee]">
-                    {selectedTargetNode?.name ??
-                      "Unknown"}
-                  </div>
+                    <InfoTooltip
+                      text="On: both sides regularly initiate communication. Off: only the 'From' side initiates — the 'To' side responds but doesn't start new communication on this channel."
+                    />
+                  </label>
+                )}
+
+                <div className="mt-2 text-[10px] text-[#777]">
+                  {direction ===
+                  "BIDIRECTIONAL"
+                    ? getBidirectionalDetail(
+                        selectedFromNode?.name ??
+                          "This node",
+                        selectedToNode?.name ??
+                          "the other node",
+                      )
+                    : getDirectionSummary(
+                        selectedFromNode?.name ??
+                          "This node",
+                        selectedToNode?.name ??
+                          "the other node",
+                        "FORWARD",
+                      )}
                 </div>
               </div>
 
@@ -1712,8 +2187,12 @@ function GraphCanvasInner({
 
               {editingRelationship ? (
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] text-[#888]">
+                  <span className="flex items-center text-[10px] text-[#888]">
                     Relationship Type
+
+                    <InfoTooltip
+                      text="A short label for what this channel is for, e.g. Escalation, Status Update, or Approval Request. Free text — use whatever vocabulary your organization already uses."
+                    />
                   </span>
 
                   <input
@@ -1743,57 +2222,17 @@ function GraphCanvasInner({
                 </div>
               )}
 
-              {/* DIRECTION */}
-
-              {editingRelationship ? (
-                <label className="flex flex-col gap-2">
-                  <span className="text-[10px] text-[#888]">
-                    Direction
-                  </span>
-
-                  <select
-                    value={direction}
-                    onChange={(event) =>
-                      setDirection(
-                        event.target
-                          .value as RelationshipDirection,
-                      )
-                    }
-                    className="h-10 w-full rounded-md border border-[#2c2c2c] bg-[#181818] px-3 text-[11px] text-[#eee] outline-none focus:border-[#555]"
-                  >
-                    <option value="FORWARD">
-                      Forward
-                    </option>
-
-                    <option value="REVERSE">
-                      Reverse
-                    </option>
-
-                    <option value="BIDIRECTIONAL">
-                      Bidirectional
-                    </option>
-                  </select>
-                </label>
-              ) : (
-                <div className="inspector-field">
-                  <span>
-                    Direction
-                  </span>
-
-                  <strong>
-                    {
-                      selectedRelationship.direction
-                    }
-                  </strong>
-                </div>
-              )}
-
               {/* CONTEXT */}
 
+
               {editingRelationship ? (
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] text-[#888]">
+                  <span className="flex items-center text-[10px] text-[#888]">
                     Context
+
+                    <InfoTooltip
+                      text="What information actually gets exchanged here, e.g. 'weekly status', 'budget approvals'. Helps an agent know what this channel is for."
+                    />
                   </span>
 
                   <textarea
@@ -1825,8 +2264,12 @@ function GraphCanvasInner({
 
               {editingRelationship ? (
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] text-[#888]">
+                  <span className="flex items-center text-[10px] text-[#888]">
                     Reliance
+
+                    <InfoTooltip
+                      text="How much one side depends on the other through this channel, e.g. 'CFO relies on Sales Lead for revenue numbers before board meetings'. Useful context for how critical the channel is."
+                    />
                   </span>
 
                   <textarea
@@ -1853,6 +2296,24 @@ function GraphCanvasInner({
                   </strong>
                 </div>
               ) : null}
+
+              {/* PROTOCOL */}
+
+              {editingRelationship && (
+                <div className="rounded-md border border-[#2c2c2c] bg-[#161616] px-3 py-2.5">
+                  <div className="flex items-center text-[10px] text-[#888]">
+                    Protocol
+
+                    <InfoTooltip
+                      text="The rules that govern this channel — who's allowed to send/receive, escalate, bypass the hierarchy, or forward information, and how confidential it is. Manage and attach protocols from the Protocols tab."
+                    />
+                  </div>
+
+                  <div className="mt-1 text-[9px] text-[#666]">
+                    Multi-protocol attachment is coming in a later update — for now, protocols are managed from the Protocols tab.
+                  </div>
+                </div>
+              )}
 
               {/* ERROR */}
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { Fragment } from "react";
+
 import {
   Handle,
   Position,
@@ -13,6 +15,44 @@ import type {
 type GraphNodeData = {
   node: TorqueNode;
 };
+
+/* =========================================================
+   HANDLES
+
+   Every side has BOTH a source-typed and a target-typed
+   handle, stacked at the exact same position. This is what
+   lets an edge connect to whichever side actually faces the
+   other node (see pickHandlePair in GraphCanvas.tsx) instead
+   of being forced onto a fixed, sometimes-wrong side —
+   without ever asking React Flow to resolve a handle id from
+   the wrong type list (which is what silently drops an
+   edge's visual connection). Two perfectly overlapping,
+   identically-styled dots at the same spot are visually
+   indistinguishable from one, so this doesn't create a
+   "duplicate circle" look.
+========================================================= */
+
+const HANDLE_SIDES = [
+  {
+    side: "top",
+    position: Position.Top,
+  },
+  {
+    side: "right",
+    position: Position.Right,
+  },
+  {
+    side: "bottom",
+    position: Position.Bottom,
+  },
+  {
+    side: "left",
+    position: Position.Left,
+  },
+] as const;
+
+const HANDLE_CLASS =
+  "!h-3 !w-3 !border-0 !bg-[#777] transition-colors hover:!bg-[#eee]";
 
 export default function GraphNode({
   data,
@@ -32,41 +72,25 @@ export default function GraphNode({
 
   return (
     <div className="relative">
-      {/* ==========================================
-          TOP
-          Incoming connection
-      ========================================== */}
+      {HANDLE_SIDES.map(
+        ({ side, position }) => (
+          <Fragment key={side}>
+            <Handle
+              id={`${side}-source`}
+              type="source"
+              position={position}
+              className={HANDLE_CLASS}
+            />
 
-      <Handle
-        id="top-target"
-        type="target"
-        position={Position.Top}
-        className="!h-3 !w-3 !border-0 !bg-[#777] transition-colors hover:!bg-[#eee]"
-      />
-
-      {/* ==========================================
-          RIGHT
-          Outgoing connection
-      ========================================== */}
-
-      <Handle
-        id="right-source"
-        type="source"
-        position={Position.Right}
-        className="!h-3 !w-3 !border-0 !bg-[#777] transition-colors hover:!bg-[#eee]"
-      />
-
-      {/* ==========================================
-          LEFT
-          Incoming connection
-      ========================================== */}
-
-      <Handle
-        id="left-target"
-        type="target"
-        position={Position.Left}
-        className="!h-3 !w-3 !border-0 !bg-[#777] transition-colors hover:!bg-[#eee]"
-      />
+            <Handle
+              id={`${side}-target`}
+              type="target"
+              position={position}
+              className={HANDLE_CLASS}
+            />
+          </Fragment>
+        ),
+      )}
 
       {/* ==========================================
           NODE BODY
@@ -103,18 +127,6 @@ export default function GraphNode({
           )}
         </div>
       </div>
-
-      {/* ==========================================
-          BOTTOM
-          Outgoing connection
-      ========================================== */}
-
-      <Handle
-        id="bottom-source"
-        type="source"
-        position={Position.Bottom}
-        className="!h-3 !w-3 !border-0 !bg-[#777] transition-colors hover:!bg-[#eee]"
-      />
     </div>
   );
 }

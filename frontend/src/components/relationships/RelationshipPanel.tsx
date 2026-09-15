@@ -3,7 +3,6 @@
 import {
   ArrowLeftRight,
   ArrowRight,
-  ArrowLeft,
   Pencil,
   Trash2,
   GitBranch,
@@ -11,9 +10,10 @@ import {
 
 import type {
   Relationship,
-  RelationshipDirection,
   Node as TorqueNode,
 } from "@/lib/types";
+
+import { getEffectiveEndpoints } from "@/lib/relationships";
 
 interface RelationshipPanelProps {
   relationships: Relationship[];
@@ -45,70 +45,6 @@ function getNodeName(
   );
 }
 
-/* =========================================================
-   DIRECTION ICON
-========================================================= */
-
-function DirectionIcon({
-  direction,
-}: {
-  direction: RelationshipDirection;
-}) {
-  if (
-    direction ===
-    "FORWARD"
-  ) {
-    return (
-      <ArrowRight
-        size={13}
-        strokeWidth={1.8}
-      />
-    );
-  }
-
-  if (
-    direction ===
-    "REVERSE"
-  ) {
-    return (
-      <ArrowLeft
-        size={13}
-        strokeWidth={1.8}
-      />
-    );
-  }
-
-  return (
-    <ArrowLeftRight
-      size={13}
-      strokeWidth={1.8}
-    />
-  );
-}
-
-/* =========================================================
-   DIRECTION LABEL
-========================================================= */
-
-function getDirectionLabel(
-  direction: RelationshipDirection,
-) {
-  if (
-    direction ===
-    "FORWARD"
-  ) {
-    return "Forward";
-  }
-
-  if (
-    direction ===
-    "REVERSE"
-  ) {
-    return "Reverse";
-  }
-
-  return "Bidirectional";
-}
 
 /* =========================================================
    PANEL
@@ -123,21 +59,24 @@ export default function RelationshipPanel({
   function handleDelete(
     relationship: Relationship,
   ) {
-    const sourceName =
-      getNodeName(
-        nodes,
-        relationship.source_node_id,
-      );
+    const {
+      fromId,
+      toId,
+    } = getEffectiveEndpoints(
+      relationship.source_node_id,
+      relationship.target_node_id,
+      relationship.direction,
+    );
 
-    const targetName =
-      getNodeName(
-        nodes,
-        relationship.target_node_id,
-      );
+    const fromName =
+      getNodeName(nodes, fromId);
+
+    const toName =
+      getNodeName(nodes, toId);
 
     const confirmed =
       window.confirm(
-        `Delete this relationship?\n\n${sourceName} → ${targetName}\n\nThis action cannot be undone.`,
+        `Delete this relationship?\n\n${fromName} → ${toName}\n\nThis action cannot be undone.`,
       );
 
     if (!confirmed) {
@@ -207,23 +146,13 @@ export default function RelationshipPanel({
                 TABLE HEADER
             ================================================= */}
 
-            <div className="grid grid-cols-[minmax(140px,1fr)_44px_minmax(140px,1fr)_150px_130px_80px] items-center border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
+            <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(120px,1fr)_80px] items-center border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
               <span>
-                SOURCE
-              </span>
-
-              <span />
-
-              <span>
-                TARGET
+                COMMUNICATION
               </span>
 
               <span>
                 TYPE
-              </span>
-
-              <span>
-                DIRECTION
               </span>
 
               <span className="text-right">
@@ -237,59 +166,65 @@ export default function RelationshipPanel({
 
             {relationships.map(
               (relationship) => {
-                const sourceName =
+                const {
+                  fromId,
+                  toId,
+                } = getEffectiveEndpoints(
+                  relationship.source_node_id,
+                  relationship.target_node_id,
+                  relationship.direction,
+                );
+
+                const fromName =
                   getNodeName(
                     nodes,
-                    relationship.source_node_id,
+                    fromId,
                   );
 
-                const targetName =
+                const toName =
                   getNodeName(
                     nodes,
-                    relationship.target_node_id,
+                    toId,
                   );
+
+                const isBidirectional =
+                  relationship.direction ===
+                  "BIDIRECTIONAL";
 
                 return (
                   <div
                     key={
                       relationship.id
                     }
-                    className="group grid grid-cols-[minmax(140px,1fr)_44px_minmax(140px,1fr)_150px_130px_80px] items-center border-b border-[#222] px-4 py-3 transition-colors last:border-b-0 hover:bg-[#141414]"
+                    className="group grid grid-cols-[minmax(220px,1.4fr)_minmax(120px,1fr)_80px] items-center border-b border-[#222] px-4 py-3 transition-colors last:border-b-0 hover:bg-[#141414]"
                   >
-                    {/* SOURCE */}
+                    {/* COMMUNICATION */}
 
                     <div
-                      title={
-                        sourceName
-                      }
-                      className="min-w-0 truncate text-[10px] font-medium text-[#ddd]"
+                      title={`${fromName} ${isBidirectional ? "\u21c4" : "\u2192"} ${toName}`}
+                      className="flex min-w-0 items-center gap-1.5 text-[10px] font-medium text-[#ddd]"
                     >
-                      {
-                        sourceName
-                      }
-                    </div>
+                      <span className="truncate">
+                        {fromName}
+                      </span>
 
-                    {/* ICON */}
+                      {isBidirectional ? (
+                        <ArrowLeftRight
+                          size={12}
+                          strokeWidth={1.8}
+                          className="shrink-0 text-[#777]"
+                        />
+                      ) : (
+                        <ArrowRight
+                          size={12}
+                          strokeWidth={1.8}
+                          className="shrink-0 text-[#777]"
+                        />
+                      )}
 
-                    <div className="flex justify-center text-[#777]">
-                      <DirectionIcon
-                        direction={
-                          relationship.direction
-                        }
-                      />
-                    </div>
-
-                    {/* TARGET */}
-
-                    <div
-                      title={
-                        targetName
-                      }
-                      className="min-w-0 truncate text-[10px] font-medium text-[#ddd]"
-                    >
-                      {
-                        targetName
-                      }
+                      <span className="truncate">
+                        {toName}
+                      </span>
                     </div>
 
                     {/* TYPE */}
@@ -303,22 +238,6 @@ export default function RelationshipPanel({
                       {
                         relationship.relationship_type
                       }
-                    </div>
-
-                    {/* DIRECTION */}
-
-                    <div className="flex items-center gap-1.5 text-[9px] text-[#777]">
-                      <DirectionIcon
-                        direction={
-                          relationship.direction
-                        }
-                      />
-
-                      <span>
-                        {getDirectionLabel(
-                          relationship.direction,
-                        )}
-                      </span>
                     </div>
 
                     {/* ACTIONS */}
