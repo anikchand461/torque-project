@@ -1,13 +1,15 @@
 from typing import Any
-from app.models import Node, Relationship, Protocol
+from app.models import Node, Relationship
 
 
 class ContextBuilder:
-    def build(self, node: Node, question: str, previous_responses: list[dict[str, Any]], relationships: list[Relationship], protocols: dict[str, Protocol]) -> dict[str, Any]:
+    def build(self, node: Node, question: str, previous_responses: list[dict[str, Any]], relationships: list[Relationship]) -> dict[str, Any]:
+        # `relationships` must have `.protocols` already
+        # eager-loaded (selectinload) by the caller — async
+        # SQLAlchemy cannot lazily load it here.
         applicable_protocols = []
         for rel in relationships:
-            if rel.protocol_id and rel.protocol_id in protocols:
-                p = protocols[rel.protocol_id]
+            for p in rel.protocols:
                 applicable_protocols.append({
                     "protocol_id": p.id,
                     "name": p.name,

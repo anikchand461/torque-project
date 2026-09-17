@@ -111,7 +111,15 @@ export interface Relationship {
   context: RelationshipNote | null;
   reliance: RelationshipNote | null;
 
-  protocol_id: UUID | null;
+  // A relationship can carry zero or more protocols
+  // (see relationship_protocols on the backend).
+  // `protocols` carries the full attached objects so
+  // the UI never needs a second round-trip just to
+  // show what's already on the relationship;
+  // `protocol_ids` is kept alongside for any consumer
+  // that only needs the lightweight id list.
+  protocol_ids: UUID[];
+  protocols: Protocol[];
 
   created_at: string;
 }
@@ -126,8 +134,6 @@ export interface RelationshipCreate {
 
   context?: RelationshipNote | null;
   reliance?: RelationshipNote | null;
-
-  protocol_id?: UUID | null;
 }
 
 export interface RelationshipUpdate {
@@ -137,8 +143,6 @@ export interface RelationshipUpdate {
 
   context?: RelationshipNote | null;
   reliance?: RelationshipNote | null;
-
-  protocol_id?: UUID | null;
 }
 
 
@@ -162,13 +166,21 @@ export interface Protocol {
 
   allowed_information_types: string[] | null;
 
-  conditions: Record<string, unknown> | null;
+  conditions: Record<string, unknown>[] | null;
 
   allowed_targets: UUID[] | null;
 
-  stop_conditions: Record<string, unknown> | null;
+  stop_conditions: Record<string, unknown>[] | null;
 
   metadata: Record<string, unknown> | null;
+
+  // Every relationship this protocol is currently
+  // attached to. A protocol created from within a
+  // relationship starts with exactly one entry here,
+  // but the underlying relationship_protocols
+  // association allows the same protocol to be
+  // attached to more than one relationship later.
+  relationship_ids: UUID[];
 
   created_at: string;
   updated_at: string;
@@ -189,11 +201,11 @@ export interface ProtocolCreate {
 
   allowed_information_types?: string[] | null;
 
-  conditions?: Record<string, unknown> | null;
+  conditions?: Record<string, unknown>[] | null;
 
   allowed_targets?: UUID[] | null;
 
-  stop_conditions?: Record<string, unknown> | null;
+  stop_conditions?: Record<string, unknown>[] | null;
 
   metadata?: Record<string, unknown> | null;
 }
@@ -213,11 +225,11 @@ export interface ProtocolUpdate {
 
   allowed_information_types?: string[] | null;
 
-  conditions?: Record<string, unknown> | null;
+  conditions?: Record<string, unknown>[] | null;
 
   allowed_targets?: UUID[] | null;
 
-  stop_conditions?: Record<string, unknown> | null;
+  stop_conditions?: Record<string, unknown>[] | null;
 
   metadata?: Record<string, unknown> | null;
 }

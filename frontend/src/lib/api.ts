@@ -300,6 +300,17 @@ export async function deleteRelationship(
 
 // ============================================
 // Protocols
+//
+// Protocols no longer stand alone at the graph
+// level — every protocol is attached to at least
+// one Relationship via the relationship_protocols
+// association. `getProtocols` is kept for the
+// read-only Protocols overview (grouped by the
+// relationship each protocol belongs to); creation
+// only happens through a relationship (see the
+// Relationship Protocols section below), and
+// editing/deleting a protocol by its own id is
+// unchanged.
 // ============================================
 
 export async function getProtocols(
@@ -307,20 +318,6 @@ export async function getProtocols(
 ): Promise<Protocol[]> {
   return request<Protocol[]>(
     `${API_PREFIX}/graphs/${graphId}/protocols`,
-  );
-}
-
-
-export async function createProtocol(
-  graphId: string,
-  data: ProtocolCreate,
-): Promise<Protocol> {
-  return request<Protocol>(
-    `${API_PREFIX}/graphs/${graphId}/protocols`,
-    {
-      method: "POST",
-      body: JSON.stringify(data),
-    },
   );
 }
 
@@ -344,6 +341,68 @@ export async function deleteProtocol(
 ): Promise<void> {
   await request(
     `${API_PREFIX}/protocols/${protocolId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+
+// ============================================
+// Relationship <-> Protocol association
+// ============================================
+
+export async function getRelationshipProtocols(
+  relationshipId: string,
+): Promise<Protocol[]> {
+  return request<Protocol[]>(
+    `${API_PREFIX}/relationships/${relationshipId}/protocols`,
+  );
+}
+
+
+// Creates a brand-new protocol scoped to (and
+// immediately attached to) this relationship.
+export async function createRelationshipProtocol(
+  relationshipId: string,
+  data: ProtocolCreate,
+): Promise<Protocol> {
+  return request<Protocol>(
+    `${API_PREFIX}/relationships/${relationshipId}/protocols`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+
+// Attaches an already-existing protocol (e.g. one
+// created for another relationship in this graph)
+// to this relationship as well.
+export async function attachProtocolToRelationship(
+  relationshipId: string,
+  protocolId: string,
+): Promise<Protocol> {
+  return request<Protocol>(
+    `${API_PREFIX}/relationships/${relationshipId}/protocols/${protocolId}/attach`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+// Detaches a protocol from this relationship without
+// deleting the protocol itself (it may still be
+// attached elsewhere). Use deleteProtocol() to
+// remove a protocol entirely.
+export async function detachProtocolFromRelationship(
+  relationshipId: string,
+  protocolId: string,
+): Promise<void> {
+  await request(
+    `${API_PREFIX}/relationships/${relationshipId}/protocols/${protocolId}`,
     {
       method: "DELETE",
     },

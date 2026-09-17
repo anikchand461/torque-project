@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Plus,
-  RefreshCw,
   CheckCircle2,
   AlertCircle,
   X,
@@ -40,8 +39,6 @@ import {
   deleteGraph,
   createRelationship,
   deleteRelationship,
-  createProtocol,
-  updateProtocol,
   deleteProtocol,
   stopExecution,
 } from "@/lib/api";
@@ -217,43 +214,6 @@ export default function Home() {
 
   const [deletingNodeId, setDeletingNodeId] =
     useState<string | null>(null);
-
-  // ============================================
-  // PROTOCOL MODAL
-  // ============================================
-
-  const [showProtocolModal, setShowProtocolModal] =
-    useState(false);
-
-  const [editingProtocolId, setEditingProtocolId] =
-    useState<string | null>(null);
-
-  const [protocolName, setProtocolName] =
-    useState("");
-
-  const [protocolDescription, setProtocolDescription] =
-    useState("");
-
-  const [protocolConfidentiality, setProtocolConfidentiality] =
-    useState("");
-
-  const [protocolCanSend, setProtocolCanSend] =
-    useState(true);
-
-  const [protocolCanReceive, setProtocolCanReceive] =
-    useState(true);
-
-  const [protocolCanEscalate, setProtocolCanEscalate] =
-    useState(false);
-
-  const [protocolCanBypass, setProtocolCanBypass] =
-    useState(false);
-
-  const [protocolCanForward, setProtocolCanForward] =
-    useState(false);
-
-  const [savingProtocol, setSavingProtocol] =
-    useState(false);
 
   // ============================================
   // MOUNT
@@ -583,7 +543,9 @@ export default function Home() {
   // ADD NODE
   // ============================================
 
-  function openAddNodeModal() {
+  function openAddNodeModal(
+    parentId?: string,
+  ) {
     if (!selectedGraph) {
       setError(
         "Create or select a graph first.",
@@ -595,7 +557,9 @@ export default function Home() {
     setNodeName("");
     setNodeTitle("");
     setNodeRole("");
-    setNodeParentId("");
+    setNodeParentId(
+      parentId ?? "",
+    );
 
     setError(null);
     setShowAddNodeModal(true);
@@ -698,7 +662,6 @@ export default function Home() {
 
                   context: null,
                   reliance: null,
-                  protocol_id: null,
                 },
               );
 
@@ -811,6 +774,71 @@ export default function Home() {
           : current,
       );
 
+      /*
+       * Assigning/changing a parent here must create the
+       * same backing Communication relationship that
+       * handleCreateNode creates when a parent is picked
+       * at creation time — otherwise the hierarchy line
+       * this draws is purely visual (derived straight from
+       * parent_id, see GraphCanvas's hierarchyEdges) with
+       * no Relationship record behind it. Clicking such an
+       * edge selects the child node instead of opening the
+       * relationship editor, and it can't be redirected or
+       * have its type/direction/context edited — exactly
+       * the "connection is static, I can't change its
+       * details" symptom this fixes.
+       */
+
+      if (updated.parent_id && selectedGraph) {
+        const alreadyExists =
+          findDuplicateRelationship(
+            relationships,
+            updated.parent_id,
+            updated.id,
+          );
+
+        if (!alreadyExists) {
+          try {
+            const parentCommunicationRelationship =
+              await createRelationship(
+                selectedGraph.id,
+                {
+                  source_node_id:
+                    updated.parent_id,
+
+                  target_node_id:
+                    updated.id,
+
+                  relationship_type:
+                    "Communication",
+
+                  direction:
+                    "BIDIRECTIONAL",
+
+                  context: null,
+                  reliance: null,
+                },
+              );
+
+            setRelationships(
+              (current) => [
+                ...current,
+                parentCommunicationRelationship,
+              ],
+            );
+          } catch (relationshipErr) {
+            console.error(
+              "AUTO-CREATE PARENT RELATIONSHIP ERROR:",
+              relationshipErr,
+            );
+
+            setError(
+              "Node updated, but the automatic communication link to its parent could not be created.",
+            );
+          }
+        }
+      }
+
       setShowEditNodeModal(false);
       setEditingNodeId(null);
     } catch (err) {
@@ -875,119 +903,6 @@ export default function Home() {
   // ============================================
   // PROTOCOLS
   // ============================================
-
-  function openNewProtocolModal() {
-    if (!selectedGraph) {
-      setError("Create or select a graph first.");
-      return;
-    }
-
-    setEditingProtocolId(null);
-    setProtocolName("");
-    setProtocolDescription("");
-    setProtocolConfidentiality("");
-    setProtocolCanSend(true);
-    setProtocolCanReceive(true);
-    setProtocolCanEscalate(false);
-    setProtocolCanBypass(false);
-    setProtocolCanForward(false);
-
-    setError(null);
-    setShowProtocolModal(true);
-  }
-
-  function openEditProtocolModal(protocol: Protocol) {
-    setEditingProtocolId(protocol.id);
-    setProtocolName(protocol.name);
-    setProtocolDescription(protocol.description ?? "");
-    setProtocolConfidentiality(
-      protocol.confidentiality ?? "",
-    );
-    setProtocolCanSend(protocol.can_send);
-    setProtocolCanReceive(protocol.can_receive);
-    setProtocolCanEscalate(protocol.can_escalate);
-    setProtocolCanBypass(protocol.can_bypass);
-    setProtocolCanForward(protocol.can_forward);
-
-    setError(null);
-    setShowProtocolModal(true);
-  }
-
-  function closeProtocolModal() {
-    if (savingProtocol) {
-      return;
-    }
-
-    setShowProtocolModal(false);
-    setEditingProtocolId(null);
-  }
-
-  async function handleSaveProtocol() {
-    if (!selectedGraph) {
-      setError("Create or select a graph first.");
-      return;
-    }
-
-    if (!protocolName.trim()) {
-      setError("Protocol name is required.");
-      return;
-    }
-
-    try {
-      setSavingProtocol(true);
-      setError(null);
-
-      const payload = {
-        name: protocolName.trim(),
-        description: protocolDescription.trim() || null,
-        confidentiality:
-          protocolConfidentiality.trim() || null,
-        can_send: protocolCanSend,
-        can_receive: protocolCanReceive,
-        can_escalate: protocolCanEscalate,
-        can_bypass: protocolCanBypass,
-        can_forward: protocolCanForward,
-      };
-
-      if (editingProtocolId) {
-        const updated = await updateProtocol(
-          editingProtocolId,
-          payload,
-        );
-
-        setProtocols((current) =>
-          current.map((protocol) =>
-            protocol.id === updated.id
-              ? updated
-              : protocol,
-          ),
-        );
-      } else {
-        const created = await createProtocol(
-          selectedGraph.id,
-          payload,
-        );
-
-        setProtocols((current) => [
-          ...current,
-          created,
-        ]);
-      }
-
-      setShowProtocolModal(false);
-      setEditingProtocolId(null);
-    } catch (err) {
-      console.error("SAVE PROTOCOL ERROR:", err);
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to save the protocol.",
-      );
-    } finally {
-      setSavingProtocol(false);
-    }
-  }
 
   async function handleDeleteProtocol(
     protocolId: string,
@@ -1674,9 +1589,52 @@ export default function Home() {
             selectedGraph?.name ??
             "No graph selected"
           }
+          graphs={graphs}
+          selectedGraphId={
+            selectedGraph?.id ?? null
+          }
+          onSelectGraph={
+            handleGraphChange
+          }
+          hasSelectedGraph={
+            !!selectedGraph
+          }
+          showGraphMenu={
+            showGraphMenu
+          }
+          onToggleGraphMenu={() =>
+            setShowGraphMenu(
+              (current) => !current,
+            )
+          }
+          onCloseGraphMenu={() =>
+            setShowGraphMenu(false)
+          }
+          onDeleteGraph={
+            handleDeleteGraph
+          }
+          deletingGraph={
+            deletingGraph
+          }
+          onOpenGraphSettings={() => {
+            setShowGraphMenu(false);
+            setActiveView("Settings");
+          }}
+          onValidate={
+            handleValidate
+          }
+          validation={validation}
+          validateDisabled={
+            !mounted || !selectedGraph
+          }
+          onAddNode={() =>
+            openAddNodeModal()
+          }
+          addNodeDisabled={
+            !mounted || !selectedGraph
+          }
           onExecute={openExecuteModal}
           executing={executing}
-          validation={validation}
         />
 
         <div className="workspace">
@@ -1727,165 +1685,6 @@ export default function Home() {
                   : "none",
             }}
           >
-              <div className="workspace-header">
-                <div>
-                  <div className="graph-title-row">
-                    <h1>
-                      {selectedGraph?.name ??
-                        "Organization Graph"}
-                    </h1>
-
-                    {selectedGraph && (
-                      <div className="relative">
-                        <button
-                          type="button"
-                          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[#777] hover:bg-[#1d1d1d] hover:text-[#eee]"
-                          onClick={(
-                            event,
-                          ) => {
-                            event.stopPropagation();
-
-                            setShowGraphMenu(
-                              (current) =>
-                                !current,
-                            );
-                          }}
-                        >
-                          ⋮
-                        </button>
-
-                        {showGraphMenu && (
-                          <div
-                            className="absolute right-0 top-9 z-[9999] w-[180px] overflow-hidden rounded-lg border border-[#303030] bg-[#151515] shadow-xl"
-                            onClick={(
-                              event,
-                            ) =>
-                              event.stopPropagation()
-                            }
-                          >
-                            <button
-                              type="button"
-                              className="block w-full cursor-pointer px-3 py-2.5 text-left text-[10px] text-[#aaa] hover:bg-[#202020] hover:text-[#eee]"
-                              onClick={() => {
-                                setShowGraphMenu(
-                                  false,
-                                );
-                              }}
-                            >
-                              Graph Settings
-                            </button>
-
-                            <div className="border-t border-[#292929]" />
-
-                            <button
-                              type="button"
-                              disabled={
-                                deletingGraph
-                              }
-                              className="block w-full cursor-pointer px-3 py-2.5 text-left text-[10px] text-red-400 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
-                              onClick={
-                                handleDeleteGraph
-                              }
-                            >
-                              {deletingGraph
-                                ? "Deleting..."
-                                : "Delete Graph"}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {graphs.length >
-                      1 && (
-                      <select
-                        className="graph-selector"
-                        value={
-                          selectedGraph?.id ??
-                          ""
-                        }
-                        onChange={(
-                          event,
-                        ) =>
-                          handleGraphChange(
-                            event
-                              .target
-                              .value,
-                          )
-                        }
-                      >
-                        {graphs.map(
-                          (
-                            graph,
-                          ) => (
-                            <option
-                              key={
-                                graph.id
-                              }
-                              value={
-                                graph.id
-                              }
-                            >
-                              {
-                                graph.name
-                              }
-                            </option>
-                          ),
-                        )}
-                      </select>
-                    )}
-                  </div>
-
-                  <p>
-                    {selectedGraph?.description ??
-                      "Create an organization graph to get started."}
-                  </p>
-                </div>
-
-                <div className="workspace-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={
-                      handleValidate
-                    }
-                    disabled={
-                      !mounted ||
-                      !selectedGraph
-                    }
-                  >
-                    {validation?.valid ? (
-                      <CheckCircle2
-                        size={15}
-                      />
-                    ) : (
-                      <RefreshCw
-                        size={15}
-                      />
-                    )}
-
-                    {validation?.valid
-                      ? "Valid graph"
-                      : "Validate"}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={
-                      openAddNodeModal
-                    }
-                    disabled={
-                      !mounted ||
-                      !selectedGraph
-                    }
-                  >
-                    <Plus size={15} />
-
-                    Add Node
-                  </button>
-                </div>
-              </div>
 
               {error && (
                 <div className="error-banner">
@@ -1947,6 +1746,13 @@ export default function Home() {
                     onEditRelationshipConsumed={() =>
                       setPendingEditRelationshipId(
                         null,
+                      )
+                    }
+                    onAddChildNode={(
+                      parentNode,
+                    ) =>
+                      openAddNodeModal(
+                        parentNode.id,
                       )
                     }
                   />
@@ -2268,13 +2074,22 @@ export default function Home() {
               {selectedGraph ? (
                 <ProtocolPanel
                   protocols={protocols}
-                  onAddProtocol={openNewProtocolModal}
-                  onSelectProtocol={
-                    openEditProtocolModal
+                  relationships={
+                    visibleRelationships
                   }
+                  nodes={nodes}
                   onDeleteProtocol={
                     handleDeleteProtocol
                   }
+                  onJumpToRelationship={(
+                    relationshipId,
+                  ) => {
+                    setPendingEditRelationshipId(
+                      relationshipId,
+                    );
+
+                    setActiveView("Graph");
+                  }}
                 />
               ) : (
                 <EmptyView
@@ -3410,208 +3225,6 @@ export default function Home() {
             </div>
           )}
 
-          {showProtocolModal && (
-            <div
-              className="modal-backdrop"
-              onMouseDown={closeProtocolModal}
-            >
-              <div
-                className="modal"
-                onMouseDown={(event) =>
-                  event.stopPropagation()
-                }
-              >
-                <div className="modal-header">
-                  <div>
-                    <div className="modal-label">
-                      PROTOCOLS
-                    </div>
-
-                    <h2>
-                      {editingProtocolId
-                        ? "Edit Protocol"
-                        : "New Protocol"}
-                    </h2>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="modal-close"
-                    onClick={closeProtocolModal}
-                    disabled={savingProtocol}
-                  >
-                    <X size={17} />
-                  </button>
-                </div>
-
-                <div className="modal-body">
-                  <label>
-                    Name
-
-                    <input
-                      value={protocolName}
-                      onChange={(event) =>
-                        setProtocolName(
-                          event.target.value,
-                        )
-                      }
-                      placeholder="e.g. Executive Escalation"
-                      autoFocus
-                    />
-                  </label>
-
-                  <label>
-                    Description
-
-                    <textarea
-                      value={protocolDescription}
-                      onChange={(event) =>
-                        setProtocolDescription(
-                          event.target.value,
-                        )
-                      }
-                      placeholder="Describe when and how this protocol applies..."
-                      rows={3}
-                    />
-                  </label>
-
-                  <label>
-                    Confidentiality
-
-                    <input
-                      value={protocolConfidentiality}
-                      onChange={(event) =>
-                        setProtocolConfidentiality(
-                          event.target.value,
-                        )
-                      }
-                      placeholder="e.g. Internal, Confidential"
-                    />
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="flex items-center gap-2 text-[10px] text-[#aaa]">
-                      <input
-                        type="checkbox"
-                        checked={protocolCanSend}
-                        onChange={(event) =>
-                          setProtocolCanSend(
-                            event.target.checked,
-                          )
-                        }
-                      />
-                      Can Send
-                    </label>
-
-                    <label className="flex items-center gap-2 text-[10px] text-[#aaa]">
-                      <input
-                        type="checkbox"
-                        checked={protocolCanReceive}
-                        onChange={(event) =>
-                          setProtocolCanReceive(
-                            event.target.checked,
-                          )
-                        }
-                      />
-                      Can Receive
-                    </label>
-
-                    <label className="flex items-center gap-2 text-[10px] text-[#aaa]">
-                      <input
-                        type="checkbox"
-                        checked={protocolCanEscalate}
-                        onChange={(event) =>
-                          setProtocolCanEscalate(
-                            event.target.checked,
-                          )
-                        }
-                      />
-                      Can Escalate
-                    </label>
-
-                    <label className="flex items-center gap-2 text-[10px] text-[#aaa]">
-                      <input
-                        type="checkbox"
-                        checked={protocolCanBypass}
-                        onChange={(event) =>
-                          setProtocolCanBypass(
-                            event.target.checked,
-                          )
-                        }
-                      />
-                      Can Bypass
-                    </label>
-
-                    <label className="flex items-center gap-2 text-[10px] text-[#aaa]">
-                      <input
-                        type="checkbox"
-                        checked={protocolCanForward}
-                        onChange={(event) =>
-                          setProtocolCanForward(
-                            event.target.checked,
-                          )
-                        }
-                      />
-                      Can Forward
-                    </label>
-                  </div>
-
-                  {error && (
-                    <div className="rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-[10px] text-red-400">
-                      {error}
-                    </div>
-                  )}
-                </div>
-
-                <div className="modal-footer">
-                  {editingProtocolId ? (
-                    <button
-                      type="button"
-                      className="h-9 rounded-md border border-red-900/60 bg-red-950/20 px-4 text-[10px] font-medium text-red-400 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => {
-                        const id = editingProtocolId;
-                        setShowProtocolModal(false);
-                        setEditingProtocolId(null);
-                        void handleDeleteProtocol(id);
-                      }}
-                      disabled={savingProtocol}
-                    >
-                      Delete Protocol
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={closeProtocolModal}
-                      disabled={savingProtocol}
-                    >
-                      Cancel
-                    </button>
-
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={handleSaveProtocol}
-                      disabled={
-                        savingProtocol ||
-                        !protocolName.trim()
-                      }
-                    >
-                      {savingProtocol
-                        ? "Saving..."
-                        : editingProtocolId
-                          ? "Save Changes"
-                          : "Create Protocol"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </section>
     </main>

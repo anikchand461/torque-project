@@ -22,11 +22,20 @@ async def main():
         db.add(protocol)
         await db.flush()
 
-        db.add_all([
-            Relationship(graph_id=graph.id, source_node_id=ceo.id, target_node_id=cto.id, relationship_type="communication", direction=RelationshipDirection.BIDIRECTIONAL, protocol_id=protocol.id),
-            Relationship(graph_id=graph.id, source_node_id=ceo.id, target_node_id=cfo.id, relationship_type="communication", direction=RelationshipDirection.BIDIRECTIONAL, protocol_id=protocol.id),
-            Relationship(graph_id=graph.id, source_node_id=cto.id, target_node_id=it.id, relationship_type="communication", direction=RelationshipDirection.BIDIRECTIONAL, protocol_id=protocol.id),
-        ])
+        ceo_cto = Relationship(graph_id=graph.id, source_node_id=ceo.id, target_node_id=cto.id, relationship_type="communication", direction=RelationshipDirection.BIDIRECTIONAL)
+        ceo_cfo = Relationship(graph_id=graph.id, source_node_id=ceo.id, target_node_id=cfo.id, relationship_type="communication", direction=RelationshipDirection.BIDIRECTIONAL)
+        cto_it = Relationship(graph_id=graph.id, source_node_id=cto.id, target_node_id=it.id, relationship_type="communication", direction=RelationshipDirection.BIDIRECTIONAL)
+
+        # protocol_id no longer exists on Relationship — a
+        # protocol is attached via the many-to-many
+        # relationship_protocols association instead. The
+        # same protocol can be (and here, is) attached to
+        # more than one relationship.
+        ceo_cto.protocols.append(protocol)
+        ceo_cfo.protocols.append(protocol)
+        cto_it.protocols.append(protocol)
+
+        db.add_all([ceo_cto, ceo_cfo, cto_it])
         await db.commit()
         print(f"Seeded graph: {graph.id}")
         print(f"Start node (CEO): {ceo.id}")

@@ -51,6 +51,7 @@ import InfoTooltip from "@/components/common/InfoTooltip";
 
 import GraphNode from "./GraphNode";
 import GraphEdge from "./GraphEdge";
+import RelationshipProtocolsSection from "@/components/protocols/RelationshipProtocolsSection";
 
 /* =========================================================
    CONTEXT / RELIANCE <-> BACKEND JSON CONVERSION
@@ -91,6 +92,16 @@ interface GraphCanvasProps {
   onRelationshipCreated?: () => void;
 
   onRelationshipUpdated?: () => void;
+
+  /*
+   * Fired from the hover "+" button on an existing
+   * node (see GraphNode). The parent page owns the
+   * Add Node modal, so this just hands it the node
+   * that should be pre-selected as parent.
+   */
+  onAddChildNode?: (
+    node: TorqueNode,
+  ) => void;
 
   /*
    * The parent page owns the authoritative
@@ -519,6 +530,7 @@ function GraphCanvasInner({
   onDeleteRelationship,
   editRelationshipId,
   onEditRelationshipConsumed,
+  onAddChildNode,
 }: GraphCanvasProps) {
   /* =======================================================
      REACT FLOW STATE
@@ -526,6 +538,23 @@ function GraphCanvasInner({
 
   const [flowNodes, setFlowNodes] =
     useState<FlowNode[]>([]);
+
+  /*
+   * Latest-callback ref (not a dependency of the
+   * position-sync effect below) so a new function
+   * identity from the parent on every render doesn't
+   * force that effect — which also persists positions
+   * to localStorage — to re-run on every keystroke
+   * elsewhere in the app.
+   */
+
+  const onAddChildNodeRef =
+    useRef(onAddChildNode);
+
+  useEffect(() => {
+    onAddChildNodeRef.current =
+      onAddChildNode;
+  }, [onAddChildNode]);
 
   /* =======================================================
      NEW CONNECTION
@@ -662,6 +691,10 @@ function GraphCanvasInner({
 
             data: {
               node,
+              onAddChild: () =>
+                onAddChildNodeRef.current?.(
+                  node,
+                ),
             },
 
             draggable: true,
@@ -706,7 +739,8 @@ function GraphCanvasInner({
      for framing the viewport.
   ======================================================= */
 
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } =
+    useReactFlow();
 
   const nodesInitialized = useNodesInitialized();
 
@@ -777,6 +811,96 @@ function GraphCanvasInner({
     nodesInitialized,
     fitView,
     graphId,
+  ]);
+
+  /* =======================================================
+     PAN TO A NEWLY ADDED NODE
+
+     createPositions can legitimately place a new node
+     far from wherever the user is currently looking (a
+     new root lands in the next grid slot, a new child
+     lands under a parent that may be off-screen) — the
+     complaint this fixes is having to zoom out and drag
+     to go find a node right after creating it. Only fires
+     for a single node appearing within the SAME graph
+     (never on the initial load of a graph, and never on
+     a graph switch, both of which legitimately add many
+     "new" node ids at once — the fitView effect above
+     already owns framing those cases).
+  ======================================================= */
+
+  const previousGraphIdRef =
+    useRef<string | null>(null);
+
+  const previousNodeIdsRef =
+    useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const isSameGraph =
+      previousGraphIdRef.current ===
+      graphId;
+
+    const currentIds = new Set(
+      torqueNodes.map(
+        (node) => node.id,
+      ),
+    );
+
+    if (
+      isSameGraph &&
+      hasFitViewRef.current
+    ) {
+      const addedNodes =
+        torqueNodes.filter(
+          (node) =>
+            !previousNodeIdsRef.current.has(
+              node.id,
+            ),
+        );
+
+      if (addedNodes.length === 1) {
+        const storedPositions =
+          loadStoredPositions(
+            graphId,
+          );
+
+        const computedPositions =
+          createPositions(
+            torqueNodes,
+          );
+
+        const position =
+          storedPositions[
+            addedNodes[0].id
+          ] ??
+          computedPositions[
+            addedNodes[0].id
+          ];
+
+        if (position) {
+          setCenter(
+            position.x +
+              APPROX_NODE_WIDTH / 2,
+            position.y +
+              APPROX_NODE_HEIGHT / 2,
+            {
+              zoom: 1,
+              duration: 500,
+            },
+          );
+        }
+      }
+    }
+
+    previousGraphIdRef.current =
+      graphId;
+
+    previousNodeIdsRef.current =
+      currentIds;
+  }, [
+    torqueNodes,
+    graphId,
+    setCenter,
   ]);
 
   /* =======================================================
@@ -1233,9 +1357,6 @@ function GraphCanvasInner({
 
                 reliance:
                   toRelationshipNote(reliance),
-
-                protocol_id:
-                  null,
               },
             );
 
@@ -1511,9 +1632,6 @@ function GraphCanvasInner({
 
               reliance:
                 toRelationshipNote(reliance),
-
-              protocol_id:
-                selectedRelationship.protocol_id,
             },
           );
 
@@ -1959,12 +2077,12 @@ function GraphCanvasInner({
                   Protocol
 
                   <InfoTooltip
-                    text="The rules that govern this channel — who's allowed to send/receive, escalate, bypass the hierarchy, or forward information, and how confidential it is. Manage and attach protocols from the Protocols tab."
+                    text="The rules that govern this channel — who's allowed to send/receive, escalate, bypass the hierarchy, or forward information, and how confidential it is. A relationship can have any number of protocols."
                   />
                 </div>
 
                 <div className="mt-1 text-[9px] text-[#666]">
-                  No protocol attached yet. Multi-protocol attachment is coming in a later update — for now, protocols are managed from the Protocols tab.
+                  Protocols can be added once this relationship is created.
                 </div>
               </div>
 
@@ -2299,21 +2417,15 @@ function GraphCanvasInner({
 
               {/* PROTOCOL */}
 
-              {editingRelationship && (
-                <div className="rounded-md border border-[#2c2c2c] bg-[#161616] px-3 py-2.5">
-                  <div className="flex items-center text-[10px] text-[#888]">
-                    Protocol
-
-                    <InfoTooltip
-                      text="The rules that govern this channel — who's allowed to send/receive, escalate, bypass the hierarchy, or forward information, and how confidential it is. Manage and attach protocols from the Protocols tab."
-                    />
-                  </div>
-
-                  <div className="mt-1 text-[9px] text-[#666]">
-                    Multi-protocol attachment is coming in a later update — for now, protocols are managed from the Protocols tab.
-                  </div>
-                </div>
-              )}
+              <RelationshipProtocolsSection
+                relationshipId={
+                  selectedRelationship.id
+                }
+                nodes={torqueNodes}
+                onProtocolsChanged={
+                  onRelationshipUpdated
+                }
+              />
 
               {/* ERROR */}
 

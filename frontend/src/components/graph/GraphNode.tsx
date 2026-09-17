@@ -2,6 +2,8 @@
 
 import { Fragment } from "react";
 
+import { Plus } from "lucide-react";
+
 import {
   Handle,
   Position,
@@ -14,6 +16,7 @@ import type {
 
 type GraphNodeData = {
   node: TorqueNode;
+  onAddChild?: () => void;
 };
 
 /* =========================================================
@@ -58,7 +61,7 @@ export default function GraphNode({
   data,
   selected,
 }: NodeProps) {
-  const { node } =
+  const { node, onAddChild } =
     data as unknown as GraphNodeData;
 
   const initials =
@@ -71,7 +74,7 @@ export default function GraphNode({
       .toUpperCase();
 
   return (
-    <div className="relative">
+    <div className="relative torque-flow-node-wrapper">
       {HANDLE_SIDES.map(
         ({ side, position }) => (
           <Fragment key={side}>
@@ -127,6 +130,34 @@ export default function GraphNode({
           )}
         </div>
       </div>
+
+      {/* ==========================================
+          ADD CONNECTED NODE
+
+          Shown on hover only, so it never competes
+          with the handles for attention on an
+          otherwise-static chart. Starts the same
+          Add Node flow as the topbar button, with
+          this node pre-selected as the parent —
+          the new node then lands positioned right
+          under it (see createPositions) instead of
+          wherever the automatic grid layout would
+          otherwise have put an unrelated root node.
+      ========================================== */}
+
+      {onAddChild && (
+        <button
+          type="button"
+          className="torque-node-add-button nodrag nopan"
+          title="Add connected node"
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddChild();
+          }}
+        >
+          <Plus size={14} />
+        </button>
+      )}
     </div>
   );
 }

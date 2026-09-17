@@ -37,8 +37,11 @@ class GraphValidator:
                 errors.append(f"Relationship {rel.id} has invalid target node {rel.target_node_id}.")
             if rel.source_node_id == rel.target_node_id:
                 errors.append(f"Relationship {rel.id} cannot connect a node to itself.")
-            if rel.protocol_id and rel.protocol_id not in protocol_set:
-                errors.append(f"Relationship {rel.id} references invalid protocol {rel.protocol_id}.")
+            # `rel.protocols` must already be eager-loaded
+            # (selectinload) by the caller.
+            for protocol in rel.protocols:
+                if protocol.id not in protocol_set:
+                    errors.append(f"Relationship {rel.id} references protocol {protocol.id} that is not part of this graph.")
 
         # Hierarchy cycles only; communication relationship cycles are valid.
         parent_map = {n.id: n.parent_id for n in nodes if n.parent_id}

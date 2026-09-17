@@ -2,6 +2,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime, timezone
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.interface import AgentRequest, PersonaAgent
 from app.graph_engine.context import ContextBuilder
@@ -28,10 +29,20 @@ class GraphExecutionEngine:
             raise ValueError("Graph not found.")
 
         nodes = list((await self.db.scalars(select(Node).where(Node.graph_id == graph_id))).all())
-        relationships = list((await self.db.scalars(select(Relationship).where(Relationship.graph_id == graph_id))).all())
+        relationships = list(
+            (
+                await self.db.scalars(
+                    select(Relationship)
+                    .where(Relationship.graph_id == graph_id)
+                    .options(selectinload(Relationship.protocols))
+                )
+            ).all()
+        )
+        # Still needed by the validator, which checks every
+        # protocol referenced by a relationship actually
+        # belongs to this graph.
         protocols = list((await self.db.scalars(select(Protocol).where(Protocol.graph_id == graph_id))).all())
         node_map = {n.id: n for n in nodes}
-        protocol_map = {p.id: p for p in protocols}
 
         if start_node_id not in node_map:
             raise ValueError("Start node does not belong to this graph.")
@@ -67,7 +78,7 @@ class GraphExecutionEngine:
                     node = node_map[node_id]
                     prior = list(state.responses)
                     rels = relationship_map[node_id]
-                    context = self.context_builder.build(node, question, prior, rels, protocol_map)
+                    context = self.context_builder.build(node, question, prior, rels)
                     request = AgentRequest(
                         execution_id=execution.id,
                         node_id=node.id,
@@ -94,8 +105,7 @@ class GraphExecutionEngine:
                     })
 
                     for rel, target_id in self.router.get_candidates(node_id, relationships):
-                        protocol = protocol_map.get(rel.protocol_id) if rel.protocol_id else None
-                        decision = self.router.evaluate(node_id, target_id, rel, protocol)
+                        decision = self.router.evaluate(node_id, target_id, rel, rel.protocols)
                         event = {
                             "from_node": node_id,
                             "to_node": target_id,

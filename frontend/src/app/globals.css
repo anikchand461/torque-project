@@ -365,10 +365,27 @@ button:disabled {
 ========================================================= */
 
 .topbar {
-  position: relative;
-  z-index: 1000;
+  /*
+   * Floating overlay, not a flex sibling that reserves
+   * its own row: it was previously in normal flow, which
+   * pushed .graph-area's box down to start 48px below the
+   * viewport top and clipped (overflow: hidden) anything
+   * panned above that line — a node scrolled near the top
+   * of the canvas would disappear completely, not just
+   * visually sit under the bar. Taking the topbar out of
+   * flow lets .graph-area fill the full height behind it,
+   * so a node can now pan all the way to the top and still
+   * be visible (through the transparent bar, or peeking
+   * out from under the floating buttons) instead of being
+   * cut off by a clipping boundary that used to sit right
+   * at the bar's lower edge.
+   */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
 
-  flex-shrink: 0;
+  z-index: 1000;
 
   width: 100%;
   height: 48px;
@@ -380,16 +397,38 @@ button:disabled {
 
   padding: 0 20px;
 
-  border-bottom: 1px solid var(--border);
+  border-bottom: none;
 
-  background: #0d0d0d;
+  background: transparent;
 
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .topbar-left {
   position: relative;
   z-index: 1001;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  height: 34px;
+  padding: 0 10px;
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  /*
+   * Unlike the right-side buttons, the breadcrumb text
+   * itself never had its own background — with the topbar
+   * now floating over the (also full-height) canvas, that
+   * meant a node panned up here rendered its name directly
+   * behind "Graphs / demo", both illegible. One solid pill
+   * around the whole left cluster fixes that the same way
+   * the pre-existing Validate/Add Node/Execute pills always
+   * did on the right.
+   */
+  background: #151515;
 
   pointer-events: auto;
 }
@@ -498,53 +537,6 @@ button:disabled {
   flex-direction: column;
 
   overflow: hidden;
-}
-
-.workspace-header {
-  position: relative;
-  z-index: 20;
-
-  flex-shrink: 0;
-
-  min-height: 58px;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 10px 24px;
-
-  border-bottom: 1px solid #1d1d1d;
-
-  background: #0a0a0a;
-
-  pointer-events: auto;
-}
-
-.workspace-header h1 {
-  margin: 0;
-
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.workspace-header p {
-  margin: 3px 0 0;
-
-  color: #666;
-
-  font-size: 11px;
-}
-
-.workspace-actions {
-  position: relative;
-  z-index: 21;
-
-  display: flex;
-  gap: 8px;
-
-  pointer-events: auto;
 }
 
 .secondary-button,
@@ -946,6 +938,63 @@ button:disabled {
   font-size: 9px;
 }
 
+.torque-node-add-button {
+  position: absolute;
+  bottom: -34px;
+  left: 50%;
+
+  transform: translateX(-50%);
+
+  width: 24px;
+  height: 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid #444;
+  border-radius: 50%;
+
+  background: #1a1a1a;
+  color: #ccc;
+
+  opacity: 0;
+
+  /*
+   * Pointer events stay enabled even while invisible
+   * (unlike the old top-right placement). The button
+   * sits a few pixels below the card now, outside its
+   * box, so the mouse crosses a gap with nothing else
+   * to hover on the way down — if this were pointer-
+   * events: none while hidden, that gap would make the
+   * button practically unreachable (hovering it can't
+   * make it visible if hovering it is itself disabled).
+   * Since it's still a DOM descendant of the wrapper,
+   * the cursor landing here is what flips
+   * .torque-flow-node-wrapper:hover on and fades it in.
+   */
+
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+
+  cursor: pointer;
+
+  z-index: 10;
+}
+
+.torque-flow-node-wrapper:hover .torque-node-add-button {
+  opacity: 1;
+}
+
+.torque-node-add-button:hover {
+  background: #2a2a2a;
+  border-color: #777;
+  color: #fff;
+}
+
 .torque-edge-label {
   padding: 3px 6px;
 
@@ -1098,7 +1147,14 @@ button:disabled {
 .node-inspector {
   position: absolute;
 
-  top: 20px;
+  /*
+   * The topbar is now a floating overlay (see .topbar)
+   * rather than a row that reserves its own height, so
+   * this panel's old top: 20px landed right underneath
+   * the Validate/Add Node/Execute buttons instead of
+   * below them.
+   */
+  top: 64px;
   right: 20px;
 
   z-index: 100;
@@ -1248,39 +1304,6 @@ button:disabled {
   border-radius: 6px;
 
   background: #111;
-}
-
-
-/* =========================================================
-   GRAPH SELECTOR
-========================================================= */
-
-.graph-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.graph-selector {
-  height: 28px;
-
-  padding: 0 8px;
-
-  border: 1px solid #292929;
-  border-radius: 5px;
-
-  outline: none;
-
-  background: #151515;
-  color: #aaa;
-
-  font-size: 10px;
-
-  pointer-events: auto;
-}
-
-.graph-selector:focus {
-  border-color: #555;
 }
 
 

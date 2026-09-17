@@ -43,6 +43,17 @@ class ProtocolRead(ProtocolBase):
     created_at: datetime
     updated_at: datetime
 
+    # Every relationship this protocol is currently
+    # attached to. Populated explicitly by the
+    # router/service layer from the loaded ORM
+    # `.relationships` collection (not derived
+    # automatically from an identically-named attribute,
+    # since that collection holds full Relationship
+    # objects, not ids, and embedding full relationships
+    # back here would risk a circular payload —
+    # RelationshipRead already embeds Protocol below).
+    relationship_ids: list[str] = []
+
     metadata: dict | None = Field(
         default=None,
         validation_alias="metadata_",
