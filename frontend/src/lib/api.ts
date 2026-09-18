@@ -444,6 +444,15 @@ export async function executeGraph(
 }
 
 
+export async function getExecutions(
+  graphId: string,
+): Promise<Execution[]> {
+  return request<Execution[]>(
+    `${API_PREFIX}/graphs/${graphId}/executions`,
+  );
+}
+
+
 export async function getExecution(
   executionId: string,
 ): Promise<Execution> {

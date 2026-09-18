@@ -1013,18 +1013,40 @@ button:disabled {
 
 /* =========================================================
    REACT FLOW HANDLES
+
+   The clickable/draggable area (the `.react-flow__handle`
+   element itself, since pointer-events is enabled directly
+   on it) is deliberately much bigger than the visible dot —
+   a 12px dot was a genuinely hard mouse target to land a
+   drag on, especially when a node has both a source- and a
+   target-typed handle stacked at the exact same spot on
+   every side (see GraphNode.tsx). The dot stays visually
+   small via the ::after pseudo-element, positioned with
+   `inset` inside the now-larger, invisible (background:
+   transparent) hit box.
 ========================================================= */
 
 .torque-flow-container
   .react-flow__handle {
-  width: 12px;
-  height: 12px;
+  width: 22px;
+  height: 22px;
 
   border: 0;
-
-  background: #777;
+  background: transparent;
 
   pointer-events: auto;
+}
+
+.torque-flow-container
+  .react-flow__handle::after {
+  content: "";
+
+  position: absolute;
+  inset: 5px;
+
+  border-radius: 50%;
+
+  background: #777;
 
   transition:
     background 0.15s ease,
@@ -1032,19 +1054,19 @@ button:disabled {
 }
 
 .torque-flow-container
-  .react-flow__handle:hover {
+  .react-flow__handle:hover::after {
   background: #eee;
 
   transform: scale(1.15);
 }
 
 .torque-flow-container
-  .react-flow__handle-connecting {
+  .react-flow__handle-connecting::after {
   background: #eee;
 }
 
 .torque-flow-container
-  .react-flow__handle-valid {
+  .react-flow__handle-valid::after {
   background: #4ade80;
 }
 

@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models import Execution
 from app.schemas.execution import ExecuteRequest, ExecutionRead, RoutingEventRead, ValidationResult
-from app.services.execution_service import execute_graph, get_execution, validate_graph
+from app.services.execution_service import execute_graph, get_execution, list_executions, validate_graph
 
 router = APIRouter(tags=["Executions"])
 
@@ -23,6 +23,11 @@ async def execute(graph_id: str, data: ExecuteRequest, db: AsyncSession = Depend
         return await execute_graph(db, graph_id, data.start_node_id, data.question)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@router.get("/graphs/{graph_id}/executions", response_model=list[ExecutionRead])
+async def list_all(graph_id: str, db: AsyncSession = Depends(get_db)):
+    return await list_executions(db, graph_id)
 
 
 @router.get("/executions/{execution_id}", response_model=ExecutionRead)

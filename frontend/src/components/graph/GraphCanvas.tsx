@@ -328,6 +328,13 @@ type CompassSide =
   | "bottom"
   | "left";
 
+type NodeBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 function pickCompassSides(
   sourceCenter: {
     x: number;
@@ -337,6 +344,8 @@ function pickCompassSides(
     x: number;
     y: number;
   },
+  sourceBox: NodeBox,
+  targetBox: NodeBox,
 ): {
   sourceSide: CompassSide;
   targetSide: CompassSide;
@@ -349,26 +358,40 @@ function pickCompassSides(
 
   /*
    * Node cards are much wider than they are
-   * tall (~280 x ~92), so comparing raw pixel
-   * dx/dy is misleading: two nodes that are
-   * mostly stacked vertically can still end up
-   * with a larger raw horizontal gap than
-   * vertical gap simply because the cards are
-   * wide, which used to route the edge out the
-   * side instead of the bottom/top. Normalizing
-   * each axis by the node's own extent on that
-   * axis first answers the actual question —
-   * "is the target more node-widths away
-   * horizontally, or more node-heights away
-   * vertically?" — which matches how the
-   * relationship actually looks on screen.
+   * tall, so comparing raw pixel dx/dy is
+   * misleading: two nodes that are mostly
+   * stacked vertically can still end up with a
+   * larger raw horizontal gap than vertical gap
+   * simply because the cards are wide, which
+   * used to route the edge out the side instead
+   * of the bottom/top. Normalizing each axis by
+   * the two nodes' own ACTUAL measured extent on
+   * that axis (not a hardcoded guess) answers the
+   * real question — "is the target more
+   * node-widths away horizontally, or more
+   * node-heights away vertically?" — and is also
+   * what keeps the rendered edge landing exactly
+   * on the connector dot instead of drifting off
+   * it whenever a card's real rendered size
+   * differs from the old fixed guess (long
+   * names/titles wrapping, etc).
    */
 
+  const averageWidth =
+    (sourceBox.width +
+      targetBox.width) /
+    2;
+
+  const averageHeight =
+    (sourceBox.height +
+      targetBox.height) /
+    2;
+
   const horizontalRatio =
-    Math.abs(dx) / APPROX_NODE_WIDTH;
+    Math.abs(dx) / averageWidth;
 
   const verticalRatio =
-    Math.abs(dy) / APPROX_NODE_HEIGHT;
+    Math.abs(dy) / averageHeight;
 
   // Horizontal distance dominates: exit/enter
   // through the left/right sides.
@@ -400,34 +423,28 @@ function pickCompassSides(
 }
 
 function pickHandlePair(
-  sourceTopLeft: {
-    x: number;
-    y: number;
-  },
-  targetTopLeft: {
-    x: number;
-    y: number;
-  },
+  sourceBox: NodeBox,
+  targetBox: NodeBox,
 ): {
   sourceHandle: string;
   targetHandle: string;
 } {
   const sourceCenter = {
     x:
-      sourceTopLeft.x +
-      APPROX_NODE_WIDTH / 2,
+      sourceBox.x +
+      sourceBox.width / 2,
     y:
-      sourceTopLeft.y +
-      APPROX_NODE_HEIGHT / 2,
+      sourceBox.y +
+      sourceBox.height / 2,
   };
 
   const targetCenter = {
     x:
-      targetTopLeft.x +
-      APPROX_NODE_WIDTH / 2,
+      targetBox.x +
+      targetBox.width / 2,
     y:
-      targetTopLeft.y +
-      APPROX_NODE_HEIGHT / 2,
+      targetBox.y +
+      targetBox.height / 2,
   };
 
   const {
@@ -436,6 +453,8 @@ function pickHandlePair(
   } = pickCompassSides(
     sourceCenter,
     targetCenter,
+    sourceBox,
+    targetBox,
   );
 
   return {
@@ -739,7 +758,7 @@ function GraphCanvasInner({
      for framing the viewport.
   ======================================================= */
 
-  const { fitView, setCenter } =
+  const { fitView, setCenter, getInternalNode } =
     useReactFlow();
 
   const nodesInitialized = useNodesInitialized();
@@ -917,18 +936,53 @@ function GraphCanvasInner({
      that could go stale).
   ======================================================= */
 
-  const nodePositions = useMemo(() => {
+  /*
+   * Each node's ACTUAL measured on-screen size, not the
+   * fixed APPROX_NODE_WIDTH/HEIGHT guess — this is what
+   * keeps an edge landing exactly on the connector dot
+   * instead of drifting off it whenever a card's real
+   * rendered size differs from the guess (long names/
+   * titles wrapping, etc). `getInternalNode` reads React
+   * Flow's own measured layout, so this recomputes with
+   * real numbers as soon as a node has been measured
+   * (tracked by `nodesInitialized`); a brand-new node that
+   * hasn't been measured yet falls back to the
+   * approximation for the one render where that's true.
+   */
+
+  const nodeBoxes = useMemo(() => {
     const map = new Map<
       string,
-      { x: number; y: number }
+      NodeBox
     >();
 
     for (const node of flowNodes) {
-      map.set(node.id, node.position);
+      const internalNode =
+        getInternalNode(node.id);
+
+      map.set(node.id, {
+        x: node.position.x,
+        y: node.position.y,
+
+        width:
+          internalNode?.measured
+            ?.width ??
+          APPROX_NODE_WIDTH,
+
+        height:
+          internalNode?.measured
+            ?.height ??
+          APPROX_NODE_HEIGHT,
+      });
     }
 
     return map;
-  }, [flowNodes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `nodesInitialized` isn't read in the body, but it's the signal that a fresh measurement pass has landed in the (untracked-by-React) React Flow store getInternalNode reads from, so it must still force a recompute.
+  }, [
+    flowNodes,
+    nodesInitialized,
+    getInternalNode,
+  ]);
 
   /*
    * Hierarchy edges are derived directly from
@@ -946,15 +1000,15 @@ function GraphCanvasInner({
         continue;
       }
 
-      const parentPos =
-        nodePositions.get(
+      const parentBox =
+        nodeBoxes.get(
           node.parent_id,
         );
 
-      const childPos =
-        nodePositions.get(node.id);
+      const childBox =
+        nodeBoxes.get(node.id);
 
-      if (!parentPos || !childPos) {
+      if (!parentBox || !childBox) {
         continue;
       }
 
@@ -962,8 +1016,8 @@ function GraphCanvasInner({
         sourceHandle,
         targetHandle,
       } = pickHandlePair(
-        parentPos,
-        childPos,
+        parentBox,
+        childBox,
       );
 
       edges.push({
@@ -987,20 +1041,20 @@ function GraphCanvasInner({
     }
 
     return edges;
-  }, [torqueNodes, nodePositions]);
+  }, [torqueNodes, nodeBoxes]);
 
   const communicationEdges = useMemo<
     Edge[]
   >(() => {
     return relationships.map(
       (relationship) => {
-        const sourcePos =
-          nodePositions.get(
+        const sourceBox =
+          nodeBoxes.get(
             relationship.source_node_id,
           );
 
-        const targetPos =
-          nodePositions.get(
+        const targetBox =
+          nodeBoxes.get(
             relationship.target_node_id,
           );
 
@@ -1008,10 +1062,10 @@ function GraphCanvasInner({
           sourceHandle,
           targetHandle,
         } =
-          sourcePos && targetPos
+          sourceBox && targetBox
             ? pickHandlePair(
-                sourcePos,
-                targetPos,
+                sourceBox,
+                targetBox,
               )
             : {
                 sourceHandle:
@@ -1079,7 +1133,7 @@ function GraphCanvasInner({
         };
       },
     );
-  }, [relationships, nodePositions]);
+  }, [relationships, nodeBoxes]);
 
   const edges = useMemo(
     () => [

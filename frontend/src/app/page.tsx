@@ -28,6 +28,7 @@ import {
   getNodes,
   getRelationships,
   getProtocols,
+  getExecutions,
   getExecution,
   getExecutionTrace,
   validateGraph,
@@ -253,6 +254,9 @@ export default function Home() {
         setRelationships([]);
         setProtocols([]);
         setSelectedNode(null);
+        setExecutions([]);
+        setSelectedExecution(null);
+        setExecutionTrace([]);
         return;
       }
 
@@ -294,17 +298,21 @@ export default function Home() {
     }
 
     // Clear the previous graph's nodes/relationships/
-    // protocols immediately. The Graph tab already hides
-    // stale data behind the `loading` spinner, but the
-    // Relationships/Protocols/Settings tabs render directly
-    // off this state and don't gate on `loading` — without
-    // this they'd keep showing the old graph's relationships
-    // (and count) until the new graph's fetch resolves.
+    // protocols/executions immediately. The Graph tab
+    // already hides stale data behind the `loading`
+    // spinner, but the Relationships/Protocols/Executions/
+    // History/Settings tabs render directly off this state
+    // and don't gate on `loading` — without this they'd
+    // keep showing the old graph's data (and counts) until
+    // the new graph's fetch resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reacts to the selectedGraph prop changing, not a value derivable during render; must clear before the new graph's async fetch starts.
     setNodes([]);
     setRelationships([]);
     setProtocols([]);
     setSelectedNode(null);
+    setExecutions([]);
+    setSelectedExecution(null);
+    setExecutionTrace([]);
 
     void loadGraphData(
       selectedGraph.id,
@@ -330,10 +338,12 @@ export default function Home() {
         graphNodes,
         graphRelationships,
         graphProtocols,
+        graphExecutions,
       ] = await Promise.all([
         getNodes(graphId),
         getRelationships(graphId),
         getProtocols(graphId),
+        getExecutions(graphId),
       ]);
 
       if (
@@ -350,6 +360,12 @@ export default function Home() {
         graphRelationships,
       );
       setProtocols(graphProtocols);
+
+      // Authoritative execution history for this graph —
+      // this is what makes every past execution (not just
+      // the ones run this browser session) show up in the
+      // Executions and History tabs, and survive a reload.
+      setExecutions(graphExecutions);
 
       setSelectedNode((current) => {
         if (!current) {
@@ -515,6 +531,9 @@ export default function Home() {
       setProtocols([]);
       setSelectedNode(null);
       setValidation(null);
+      setExecutions([]);
+      setSelectedExecution(null);
+      setExecutionTrace([]);
 
       setShowNewGraphModal(false);
 
@@ -1307,6 +1326,7 @@ export default function Home() {
       setProtocols([]);
       setSelectedNode(null);
       setValidation(null);
+      setExecutions([]);
       setSelectedExecution(null);
       setExecutionTrace([]);
 
@@ -2233,10 +2253,18 @@ export default function Home() {
                                 />
                               </div>
 
-                              <div className="mt-2 text-[8px] text-[#555]">
-                                {
-                                  execution.execution_id
-                                }
+                              <div className="mt-2 flex items-center justify-between gap-2 text-[8px] text-[#555]">
+                                <span className="truncate">
+                                  {
+                                    execution.execution_id
+                                  }
+                                </span>
+
+                                <span className="shrink-0">
+                                  {formatFinishedAt(
+                                    execution,
+                                  )}
+                                </span>
                               </div>
                             </button>
                           );
@@ -2322,7 +2350,7 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                      <div className="mt-6 grid gap-3 sm:grid-cols-4">
                         <MetricCard
                           label="Start Node"
                           value={getNodeName(
@@ -2341,6 +2369,13 @@ export default function Home() {
                           label="Routing Events"
                           value={String(
                             executionTrace.length,
+                          )}
+                        />
+
+                        <MetricCard
+                          label="Finished"
+                          value={formatFinishedAt(
+                            selectedExecution,
                           )}
                         />
                       </div>
@@ -2487,7 +2522,7 @@ export default function Home() {
                   />
                 ) : (
                   <div className="overflow-hidden rounded-lg border border-[#292929]">
-                    <div className="grid grid-cols-[1fr_140px_120px_180px] border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
+                    <div className="grid grid-cols-[1fr_140px_120px_170px_180px] border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
                       <span>
                         QUESTION
                       </span>
@@ -2498,6 +2533,10 @@ export default function Home() {
 
                       <span>
                         START NODE
+                      </span>
+
+                      <span>
+                        FINISHED
                       </span>
 
                       <span>
@@ -2514,7 +2553,7 @@ export default function Home() {
                             execution.execution_id
                           }
                           type="button"
-                          className="grid w-full cursor-pointer grid-cols-[1fr_140px_120px_180px] items-center border-b border-[#222] px-4 py-3 text-left last:border-b-0 hover:bg-[#141414]"
+                          className="grid w-full cursor-pointer grid-cols-[1fr_140px_120px_170px_180px] items-center border-b border-[#222] px-4 py-3 text-left last:border-b-0 hover:bg-[#141414]"
                           onClick={() => {
                             setSelectedExecution(
                               execution,
@@ -2551,6 +2590,12 @@ export default function Home() {
                           <span className="truncate text-[9px] text-[#777]">
                             {getNodeName(
                               execution.start_node_id,
+                            )}
+                          </span>
+
+                          <span className="truncate text-[9px] text-[#777]">
+                            {formatFinishedAt(
+                              execution,
                             )}
                           </span>
 
@@ -3276,6 +3321,32 @@ function ViewHeader({
       </div>
     </div>
   );
+}
+
+/* =========================================================
+   FINISHED-AT TIMESTAMP
+
+   `completed_at` is null while an execution is still
+   PENDING/RUNNING (and, today, also for a STOPPED
+   execution — the stop endpoint doesn't set it) — those
+   cases fall back to a plain status word instead of a
+   timestamp rather than showing a misleading blank.
+========================================================= */
+
+function formatFinishedAt(
+  execution: Execution,
+): string {
+  if (execution.completed_at) {
+    return new Date(
+      execution.completed_at,
+    ).toLocaleString();
+  }
+
+  return execution.status ===
+    "RUNNING" ||
+    execution.status === "PENDING"
+    ? "In progress…"
+    : "—";
 }
 
 function EmptyView({

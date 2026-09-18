@@ -15,6 +15,19 @@ async def get_execution(db: AsyncSession, execution_id: str) -> Execution | None
     return await db.get(Execution, execution_id)
 
 
+async def list_executions(db: AsyncSession, graph_id: str) -> list[Execution]:
+    # Most recent first — matches the order the frontend already
+    # prepends newly-run executions in, so a page reload doesn't
+    # visibly reorder the list the user was just looking at.
+    return list(
+        (
+            await db.scalars(
+                select(Execution).where(Execution.graph_id == graph_id).order_by(Execution.created_at.desc())
+            )
+        ).all()
+    )
+
+
 async def validate_graph(db: AsyncSession, graph_id: str):
     nodes = list((await db.scalars(select(Node).where(Node.graph_id == graph_id))).all())
     relationships = list(
