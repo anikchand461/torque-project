@@ -1720,8 +1720,8 @@ button:disabled {
 
     z-index: 1000;
 
-    width: 250px;
-    min-width: 250px;
+    width: 190px;
+    min-width: 190px;
     height: 100dvh;
 
     padding: 20px 14px;

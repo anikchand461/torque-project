@@ -2515,7 +2515,7 @@ export default function Home() {
 
           {activeView ===
             "History" && (
-            <div className="flex h-full flex-col pt-16">
+            <div className="flex h-full flex-col overflow-y-auto pt-16">
               <ViewHeader
                 eyebrow="HISTORY"
                 title="Execution History"
@@ -2552,7 +2552,7 @@ export default function Home() {
                 />
               </div>
 
-              <div className="flex-1 overflow-auto px-6 pb-6">
+              <div className="px-6 pb-6">
                 {executions.length ===
                 0 ? (
                   <EmptyView
