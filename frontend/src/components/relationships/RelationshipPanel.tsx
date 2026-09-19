@@ -141,12 +141,12 @@ export default function RelationshipPanel({
             </div>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-[#292929]">
+          <div className="overflow-x-auto rounded-lg border border-[#292929]">
             {/* =================================================
                 TABLE HEADER
             ================================================= */}
 
-            <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(120px,1fr)_80px] items-center border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
+            <div className="grid min-w-[420px] grid-cols-[minmax(220px,1.4fr)_minmax(120px,1fr)_80px] items-center border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
               <span>
                 COMMUNICATION
               </span>
@@ -196,7 +196,7 @@ export default function RelationshipPanel({
                     key={
                       relationship.id
                     }
-                    className="group grid grid-cols-[minmax(220px,1.4fr)_minmax(120px,1fr)_80px] items-center border-b border-[#222] px-4 py-3 transition-colors last:border-b-0 hover:bg-[#141414]"
+                    className="group grid min-w-[420px] grid-cols-[minmax(220px,1.4fr)_minmax(120px,1fr)_80px] items-center border-b border-[#222] px-4 py-3 transition-colors last:border-b-0 hover:bg-[#141414]"
                   >
                     {/* COMMUNICATION */}
 

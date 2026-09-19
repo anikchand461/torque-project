@@ -15,6 +15,7 @@ import {
   Square,
   Loader2,
   ArrowRight,
+  ArrowLeft,
 } from "lucide-react";
 
 import Sidebar from "@/components/layout/Sidebar";
@@ -66,6 +67,9 @@ export default function Home() {
     useState("Graph");
 
   const [sidebarCollapsed, setSidebarCollapsed] =
+    useState(false);
+
+  const [mobileNavOpen, setMobileNavOpen] =
     useState(false);
 
   const [loading, setLoading] =
@@ -1597,6 +1601,10 @@ export default function Home() {
             (current) => !current,
           )
         }
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() =>
+          setMobileNavOpen(false)
+        }
       />
 
       <section className="main-area">
@@ -1615,6 +1623,9 @@ export default function Home() {
           }
           onSelectGraph={
             handleGraphChange
+          }
+          onOpenMobileNav={() =>
+            setMobileNavOpen(true)
           }
           hasSelectedGraph={
             !!selectedGraph
@@ -2010,7 +2021,7 @@ export default function Home() {
 
           {activeView ===
             "Relationships" && (
-            <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-full min-h-0 flex-col pt-16">
               {error && (
                 <div className="error-banner">
                   <AlertCircle
@@ -2074,7 +2085,7 @@ export default function Home() {
 
           {activeView ===
             "Protocols" && (
-            <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-full min-h-0 flex-col pt-16">
               {error && (
                 <div className="error-banner">
                   <AlertCircle size={16} />
@@ -2127,7 +2138,7 @@ export default function Home() {
 
           {activeView ===
             "Executions" && (
-            <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-full min-h-0 flex-col pt-16">
               <ViewHeader
                 eyebrow="EXECUTIONS"
                 title="Graph Executions"
@@ -2165,10 +2176,22 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="flex min-h-0 flex-1">
-                {/* EXECUTION LIST */}
+              <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+                {/* EXECUTION LIST
 
-                <div className="w-[360px] shrink-0 overflow-auto border-r border-[#242424] p-4">
+                    On mobile this is the whole page until an
+                    execution is picked (see the `hidden`/`block`
+                    toggle below) — a master/detail push, not a
+                    cramped stacked list+detail. From md up both
+                    panes are always visible side by side. */}
+
+                <div
+                  className={`${
+                    selectedExecution
+                      ? "hidden"
+                      : "block"
+                  } w-full flex-1 overflow-auto border-b border-[#242424] p-4 md:block md:w-[360px] md:flex-none md:border-b-0 md:border-r`}
+                >
                   {executions.length ===
                   0 ? (
                     <div className="flex h-full items-center justify-center text-center">
@@ -2276,7 +2299,13 @@ export default function Home() {
 
                 {/* EXECUTION DETAILS */}
 
-                <div className="min-w-0 flex-1 overflow-auto p-6">
+                <div
+                  className={`${
+                    selectedExecution
+                      ? "block"
+                      : "hidden"
+                  } min-w-0 flex-1 overflow-auto p-6 md:block`}
+                >
                   {!selectedExecution ? (
                     <EmptyView
                       icon={
@@ -2289,7 +2318,22 @@ export default function Home() {
                     />
                   ) : (
                     <div className="max-w-4xl">
-                      <div className="flex items-start justify-between gap-6">
+                      <button
+                        type="button"
+                        className="mb-4 flex items-center gap-1.5 text-[10px] font-medium text-[#999] hover:text-[#eee] md:hidden"
+                        onClick={() =>
+                          setSelectedExecution(
+                            null,
+                          )
+                        }
+                      >
+                        <ArrowLeft
+                          size={13}
+                        />
+                        Back to executions
+                      </button>
+
+                      <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                           <div className="text-[9px] font-bold tracking-[0.12em] text-[#555]">
                             EXECUTION
@@ -2471,7 +2515,7 @@ export default function Home() {
 
           {activeView ===
             "History" && (
-            <div className="flex h-full flex-col">
+            <div className="flex h-full flex-col pt-16">
               <ViewHeader
                 eyebrow="HISTORY"
                 title="Execution History"
@@ -2521,8 +2565,8 @@ export default function Home() {
                     description="Run the graph to create execution history."
                   />
                 ) : (
-                  <div className="overflow-hidden rounded-lg border border-[#292929]">
-                    <div className="grid grid-cols-[1fr_140px_120px_170px_180px] border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
+                  <div className="overflow-x-auto rounded-lg border border-[#292929]">
+                    <div className="min-w-[760px] grid grid-cols-[1fr_140px_120px_170px_180px] border-b border-[#292929] bg-[#151515] px-4 py-3 text-[8px] font-bold tracking-[0.1em] text-[#555]">
                       <span>
                         QUESTION
                       </span>
@@ -2553,7 +2597,7 @@ export default function Home() {
                             execution.execution_id
                           }
                           type="button"
-                          className="grid w-full cursor-pointer grid-cols-[1fr_140px_120px_170px_180px] items-center border-b border-[#222] px-4 py-3 text-left last:border-b-0 hover:bg-[#141414]"
+                          className="grid w-full min-w-[760px] cursor-pointer grid-cols-[1fr_140px_120px_170px_180px] items-center border-b border-[#222] px-4 py-3 text-left last:border-b-0 hover:bg-[#141414]"
                           onClick={() => {
                             setSelectedExecution(
                               execution,
@@ -2619,7 +2663,7 @@ export default function Home() {
 
           {activeView ===
             "Settings" && (
-            <div className="flex h-full flex-col">
+            <div className="flex h-full flex-col pt-16">
               <ViewHeader
                 eyebrow="SETTINGS"
                 title="Workspace Settings"

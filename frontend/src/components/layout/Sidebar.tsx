@@ -18,6 +18,8 @@ interface SidebarProps {
   onNewGraph: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 const navigation = [
@@ -49,19 +51,32 @@ export default function Sidebar({
   onNewGraph,
   collapsed,
   onToggleCollapse,
+  mobileOpen = false,
+  onCloseMobile,
 }: SidebarProps) {
   function handleNavigation(
     view: string,
   ) {
     onViewChange(view);
+    onCloseMobile?.();
   }
 
   return (
-    <aside
-      className={`sidebar ${
-        collapsed ? "sidebar-collapsed" : ""
-      }`}
-    >
+    <>
+      {mobileOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={onCloseMobile}
+        />
+      )}
+
+      <aside
+        className={`sidebar ${
+          collapsed ? "sidebar-collapsed" : ""
+        } ${
+          mobileOpen ? "sidebar-mobile-open" : ""
+        }`}
+      >
       {/* COLLAPSE TOGGLE */}
 
       <button
@@ -202,6 +217,7 @@ export default function Sidebar({
           )}
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

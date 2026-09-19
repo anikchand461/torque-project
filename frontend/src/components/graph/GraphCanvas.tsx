@@ -1900,6 +1900,21 @@ function GraphCanvasInner({
             stroke: "#888",
             strokeWidth: 1.5,
           }}
+          /*
+           * React Flow's own "React Flow" attribution
+           * link defaults to the same bottom-right
+           * corner as our Controls panel below. The two
+           * silently overlap there, and since the
+           * attribution is a clickable <a>, it was
+           * swallowing clicks meant for the fit-view
+           * ("[]") button — the bottommost, and
+           * therefore most overlapped, control. Zoom
+           * +/- sit higher in the stack and were never
+           * covered, which is why only fit-view looked
+           * broken. Moving it to the empty bottom-left
+           * corner removes the overlap entirely.
+           */
+          attributionPosition="bottom-left"
         >
           <Background
             gap={32}
@@ -1931,14 +1946,14 @@ function GraphCanvasInner({
           }}
         >
           <div
-            className="w-full max-w-[520px] overflow-hidden rounded-xl border border-[#303030] bg-[#111] shadow-[0_25px_100px_rgba(0,0,0,0.8)]"
+            className="flex max-h-[90vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-[#303030] bg-[#111] shadow-[0_25px_100px_rgba(0,0,0,0.8)]"
             onMouseDown={(event) =>
               event.stopPropagation()
             }
           >
             {/* HEADER */}
 
-            <div className="flex items-start justify-between border-b border-[#242424] px-5 py-4">
+            <div className="flex shrink-0 items-start justify-between border-b border-[#242424] px-5 py-4">
               <div>
                 <div className="text-[9px] font-bold tracking-[0.14em] text-[#666]">
                   NEW RELATIONSHIP
@@ -1963,7 +1978,7 @@ function GraphCanvasInner({
 
             {/* BODY */}
 
-            <div className="flex flex-col gap-5 p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
               {/* FROM → TO */}
 
               <div>
@@ -2149,7 +2164,7 @@ function GraphCanvasInner({
 
             {/* FOOTER */}
 
-            <div className="flex justify-end gap-2 border-t border-[#242424] px-5 py-4">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-[#242424] px-5 py-4">
               <button
                 type="button"
                 className="h-9 rounded-md border border-[#303030] px-4 text-[10px] text-[#999] hover:bg-[#1b1b1b] hover:text-[#eee]"
@@ -2206,14 +2221,14 @@ function GraphCanvasInner({
           }}
         >
           <div
-            className="w-full max-w-[520px] overflow-hidden rounded-xl border border-[#303030] bg-[#111] shadow-[0_25px_100px_rgba(0,0,0,0.8)]"
+            className="flex max-h-[90vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-[#303030] bg-[#111] shadow-[0_25px_100px_rgba(0,0,0,0.8)]"
             onMouseDown={(event) =>
               event.stopPropagation()
             }
           >
             {/* HEADER */}
 
-            <div className="flex items-start justify-between border-b border-[#242424] px-5 py-4">
+            <div className="flex shrink-0 items-start justify-between border-b border-[#242424] px-5 py-4">
               <div>
                 <div className="text-[9px] font-bold tracking-[0.14em] text-[#666]">
                   {editingRelationship
@@ -2250,7 +2265,7 @@ function GraphCanvasInner({
 
             {/* BODY */}
 
-            <div className="flex flex-col gap-5 p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
               {/* FROM / TO */}
 
               <div>
@@ -2492,7 +2507,7 @@ function GraphCanvasInner({
 
             {/* FOOTER */}
 
-            <div className="flex items-center justify-between border-t border-[#242424] px-5 py-4">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[#242424] px-5 py-4">
               {!editingRelationship ? (
                 <>
                   {/* DELETE */}

@@ -69,6 +69,7 @@ button:disabled {
 
   width: 100%;
   height: 100vh;
+  height: 100dvh;
 
   overflow: hidden;
 
@@ -112,6 +113,45 @@ button:disabled {
   min-width: 60px;
 
   padding: 20px 8px;
+}
+
+/* Mobile drawer backdrop — only rendered while the
+   sidebar is open on a mobile-width viewport. */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+
+  z-index: 900;
+
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* Hamburger button that opens the mobile drawer.
+   Hidden on desktop; the RESPONSIVE section below
+   reveals it under the mobile breakpoint. */
+.mobile-menu-button {
+  display: none;
+
+  align-items: center;
+  justify-content: center;
+
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  margin: 0 -2px 0 -4px;
+
+  border: 0;
+  border-radius: 6px;
+
+  background: transparent;
+  color: #999;
+
+  pointer-events: auto;
+}
+
+.mobile-menu-button:hover {
+  background: #1d1d1d;
+  color: #eee;
 }
 
 .sidebar-toggle {
@@ -449,9 +489,20 @@ button:disabled {
   align-items: center;
   gap: 9px;
 
+  min-width: 0;
+
   color: #ddd;
 
   font-size: 12px;
+}
+
+.breadcrumb-graph-name {
+  overflow: hidden;
+
+  max-width: 40vw;
+
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .breadcrumb-muted {
@@ -1353,6 +1404,10 @@ button:disabled {
 .modal {
   width: 100%;
   max-width: 480px;
+  max-height: 90vh;
+
+  display: flex;
+  flex-direction: column;
 
   overflow: hidden;
 
@@ -1366,6 +1421,7 @@ button:disabled {
 
 .modal-header {
   display: flex;
+  flex-shrink: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -1410,10 +1466,14 @@ button:disabled {
 
 .modal-body {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
 
+  min-height: 0;
   padding: 20px;
+
+  overflow-y: auto;
 }
 
 .modal-body > label {
@@ -1461,6 +1521,8 @@ button:disabled {
 
 .modal-footer {
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1629,6 +1691,167 @@ button:disabled {
 
   .workspace-header h1 {
     font-size: 15px;
+  }
+}
+
+/* =========================================================
+   MOBILE (<=768px)
+
+   The sidebar switches from a permanent flex sibling to a
+   fixed, off-canvas drawer (translateX, not unmounted, so
+   its internal state/scroll position survives being
+   toggled) opened via the topbar's hamburger button and
+   closed by the backdrop or picking a nav item. The
+   desktop collapse toggle is hidden here — a drawer that
+   is either fully open or fully closed makes the collapsed
+   "rail" state meaningless.
+========================================================= */
+
+@media (max-width: 768px) {
+  .app-shell {
+    overflow: hidden;
+  }
+
+  .sidebar,
+  .sidebar-collapsed {
+    position: fixed;
+    top: 0;
+    left: 0;
+
+    z-index: 1000;
+
+    width: 250px;
+    min-width: 250px;
+    height: 100dvh;
+
+    padding: 20px 14px;
+
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+
+    box-shadow: 0 0 0 transparent;
+  }
+
+  .sidebar-mobile-open,
+  .sidebar-collapsed.sidebar-mobile-open {
+    transform: translateX(0);
+
+    box-shadow: 20px 0 60px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Collapsing doesn't make sense for a drawer that's
+     either fully open or fully hidden. */
+  .sidebar-collapsed .sidebar-logo,
+  .sidebar-collapsed .new-graph-button,
+  .sidebar-collapsed .sidebar-nav-item,
+  .sidebar-collapsed .backend-status {
+    justify-content: flex-start;
+  }
+
+  .sidebar .sidebar-toggle {
+    display: none;
+  }
+
+  .mobile-menu-button {
+    display: flex;
+  }
+
+  .topbar {
+    padding: 0 12px;
+  }
+
+  .topbar-left {
+    max-width: 62%;
+  }
+
+  /* "Graphs /" is redundant chrome once space is
+     tight — the graph name + dropdown chevron is
+     enough to identify the switcher. */
+  .breadcrumb-muted,
+  .breadcrumb-separator {
+    display: none;
+  }
+
+  .breadcrumb-graph-name {
+    max-width: 55vw;
+  }
+
+  .topbar-right {
+    gap: 8px;
+  }
+
+  .topbar-right .secondary-button,
+  .topbar-right .primary-button {
+    padding: 0 10px;
+  }
+
+  .topbar-right .button-label {
+    display: none;
+  }
+
+  .validation-status {
+    display: none;
+  }
+
+  .node-inspector {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+
+    width: 100%;
+
+    max-height: 65vh;
+
+    border-radius: 14px 14px 0 0;
+    border-bottom: 0;
+
+    overflow-y: auto;
+  }
+
+  .error-banner {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+
+    max-width: none;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal {
+    max-height: 88dvh;
+    border-radius: 14px;
+  }
+
+  /* iOS Safari zooms the page in on focus of any input
+     with a computed font-size under 16px — every form
+     field in this app is well under that on desktop. */
+  .modal-body input,
+  .modal-body textarea,
+  .modal-body select {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-right .execute-button .button-label {
+    display: none;
+  }
+
+  .canvas-info {
+    right: 10px;
+    bottom: 10px;
+
+    font-size: 9px;
+  }
+
+  .graph-controls {
+    left: 10px;
+    bottom: 10px;
   }
 }
 

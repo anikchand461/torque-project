@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   MoreVertical,
+  Menu,
 } from "lucide-react";
 
 import type { Graph, ValidationResult } from "@/lib/types";
@@ -19,6 +20,8 @@ interface TopbarProps {
   graphs: Graph[];
   selectedGraphId?: string | null;
   onSelectGraph: (graphId: string) => void;
+
+  onOpenMobileNav?: () => void;
 
   hasSelectedGraph: boolean;
   showGraphMenu: boolean;
@@ -44,6 +47,7 @@ export default function Topbar({
   graphs,
   selectedGraphId = null,
   onSelectGraph,
+  onOpenMobileNav,
   hasSelectedGraph,
   showGraphMenu,
   onToggleGraphMenu,
@@ -80,6 +84,15 @@ export default function Topbar({
   return (
     <header className="topbar">
       <div className="topbar-left">
+        <button
+          type="button"
+          className="mobile-menu-button"
+          title="Open menu"
+          onClick={onOpenMobileNav}
+        >
+          <Menu size={17} />
+        </button>
+
         <div className="relative">
           <button
             type="button"
@@ -98,7 +111,9 @@ export default function Topbar({
               /
             </span>
 
-            <span>{graphName}</span>
+            <span className="breadcrumb-graph-name">
+              {graphName}
+            </span>
 
             <ChevronDown size={14} />
           </button>
@@ -218,9 +233,11 @@ export default function Topbar({
             <RefreshCw size={15} />
           )}
 
-          {validation?.valid
-            ? "Valid graph"
-            : "Validate"}
+          <span className="button-label">
+            {validation?.valid
+              ? "Valid graph"
+              : "Validate"}
+          </span>
         </button>
 
         <button
@@ -230,7 +247,9 @@ export default function Topbar({
           disabled={addNodeDisabled}
         >
           <Plus size={15} />
-          Add Node
+          <span className="button-label">
+            Add Node
+          </span>
         </button>
 
         <button
@@ -251,7 +270,7 @@ export default function Topbar({
             />
           )}
 
-          <span>
+          <span className="button-label">
             {executing
               ? "Executing..."
               : "Execute"}
