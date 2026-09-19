@@ -200,7 +200,7 @@ export default function Sidebar({
 
         <div
           className="backend-status"
-          title="Backend connected — localhost:8000"
+          title="Backend connected"
         >
           <span className="status-dot" />
 
@@ -211,7 +211,7 @@ export default function Sidebar({
               </div>
 
               <div className="status-url">
-                localhost:8000
+                backend connected
               </div>
             </div>
           )}
